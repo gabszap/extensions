@@ -8,7 +8,7 @@
 // @grant       GM_xmlhttpRequest
 // @grant       GM_download
 // @connect     catbox.moe
-// @version     2.6.61
+// @version     2.6.67
 // @author      Antigravity
 // @description Substitui o botão do Grok por um Bookmark interno
 // ==/UserScript==
@@ -31,6 +31,7 @@
     const ICON_EXTERNAL_LINK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
     const ICON_CALENDAR = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>`;
     const ICON_DOWNLOAD = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>`;
+    const ICON_MERGE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="10" rx="2"/><rect x="11" y="11" width="10" height="10" rx="2"/></svg>`;
     const ICON_PENCIL_SMALL = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
     const ICON_USER = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     const ICON_CLOUD = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`;
@@ -707,6 +708,14 @@
         const bookmark = bookmarks.find(b => b.id === bookmarkId);
         if (!bookmark || !bookmark.images || bookmark.images.length === 0) return;
 
+        // Se ja existe mescla salva, nao faz backup das imagens cortadas
+        if (bookmark.mergedImageUrl && bookmark.mergedImageUrl.startsWith('https://')) {
+            if (isManual) {
+                showToast('Post com mescla salva: backup das cortadas ignorado');
+            }
+            return;
+        }
+
         // Verificar filtro de tags (apenas para backup automático)
         const settings = getSettings();
         if (!isManual && settings.catboxFilterTags && settings.catboxFilterTags.length > 0) {
@@ -788,6 +797,12 @@
         return { url: null, fallbackUrl: null, isFallback: true, hasCatboxBackup: false };
     }
 
+    function getMergedImageFilename(bookmark) {
+        const handle = extractHandle(bookmark.postUrl) || 'unknown';
+        const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
+        return `@${handle}_${postId}_merged.jpg`;
+    }
+
     // ==================== LOCAL DOWNLOAD ====================
     function downloadImage(url, filename) {
         GM_download({
@@ -802,9 +817,228 @@
         });
     }
 
+    async function loadImageFromBlob(blob) {
+        const objectUrl = URL.createObjectURL(blob);
+
+        try {
+            const image = await new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('Falha ao decodificar imagem para mescla'));
+                img.src = objectUrl;
+            });
+
+            return {
+                image,
+                revoke: () => URL.revokeObjectURL(objectUrl)
+            };
+        } catch (error) {
+            URL.revokeObjectURL(objectUrl);
+            throw error;
+        }
+    }
+
+    function getMergeCandidates(bookmark, index) {
+        const candidates = [];
+        const original = bookmark?.images?.[index];
+
+        if (original) {
+            const url4k = formatTwitterUrl(original);
+            if (url4k) candidates.push(url4k);
+
+            if (url4k && url4k.includes('name=4096x4096')) {
+                candidates.push(url4k.replace('name=4096x4096', 'name=large'));
+            }
+
+            if (original !== url4k) candidates.push(original);
+        }
+
+        const catbox = bookmark?.catboxUrls?.[index];
+        if (catbox && catbox.startsWith('https://')) candidates.push(catbox);
+
+        return [...new Set(candidates.filter(Boolean))];
+    }
+
+    const mergeInProgressIds = new Set();
+
+    async function mergeBookmarkImages(bookmark) {
+        if (!bookmark || !Array.isArray(bookmark.images) || bookmark.images.length < 2) {
+            showToast('Este post precisa ter 2+ imagens para mesclar');
+            return null;
+        }
+
+        if (mergeInProgressIds.has(bookmark.id)) {
+            showToast('Mescla já em andamento para este post');
+            return null;
+        }
+
+        mergeInProgressIds.add(bookmark.id);
+
+        const decoded = [];
+        const failedIndexes = [];
+
+        try {
+            showToast(`Mesclando ${bookmark.images.length} imagens...`);
+
+            for (let idx = 0; idx < bookmark.images.length; idx++) {
+                const candidates = getMergeCandidates(bookmark, idx);
+                let loaded = null;
+
+                for (const candidate of candidates) {
+                    try {
+                        const blob = await downloadUrlAsBlob(candidate);
+                        const decodedImage = await loadImageFromBlob(blob);
+                        loaded = {
+                            image: decodedImage.image,
+                            revoke: decodedImage.revoke,
+                            source: candidate
+                        };
+                        break;
+                    } catch (error) {
+                        console.warn(`[X-Bookmark] Merge: falha ao carregar imagem ${idx + 1} de`, candidate, error.message || error);
+                    }
+                }
+
+                if (!loaded) {
+                    failedIndexes.push(idx + 1);
+                } else {
+                    decoded.push(loaded);
+                }
+            }
+
+            if (failedIndexes.length > 0) {
+                throw new Error(`Falha ao carregar imagem(ns): ${failedIndexes.join(', ')}`);
+            }
+
+            const targetWidth = Math.max(...decoded.map(item => item.image.naturalWidth || item.image.width || 0));
+            const drawHeights = decoded.map(item => {
+                const w = item.image.naturalWidth || item.image.width || 1;
+                const h = item.image.naturalHeight || item.image.height || 1;
+                return Math.max(1, Math.round(h * (targetWidth / w)));
+            });
+            const totalHeight = drawHeights.reduce((sum, h) => sum + h, 0);
+
+            if (targetWidth < 2 || totalHeight < 2) {
+                throw new Error('Dimensões inválidas para mescla');
+            }
+
+            if (targetWidth > 16384 || totalHeight > 32767) {
+                throw new Error('Imagem final muito grande para o navegador');
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = totalHeight;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('Não foi possível criar canvas para mescla');
+
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, targetWidth, totalHeight);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            let y = 0;
+            decoded.forEach((item, idx) => {
+                ctx.drawImage(item.image, 0, y, targetWidth, drawHeights[idx]);
+                y += drawHeights[idx];
+            });
+
+            const outBlob = await new Promise((resolve, reject) => {
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        reject(new Error('Falha ao exportar imagem mesclada'));
+                        return;
+                    }
+                    resolve(blob);
+                }, 'image/jpeg', 0.96);
+            });
+
+            const handle = extractHandle(bookmark.postUrl) || 'unknown';
+            const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
+            const filename = `@${handle}_${postId}_merged.jpg`;
+
+            console.log('[X-Bookmark] Merge concluido:', {
+                bookmarkId: bookmark.id,
+                imagens: bookmark.images.length,
+                arquivo: filename,
+                fontes: decoded.map(item => item.source)
+            });
+
+            return {
+                blob: outBlob,
+                filename,
+                width: targetWidth,
+                height: totalHeight
+            };
+        } catch (error) {
+            console.error('[X-Bookmark] Falha ao mesclar imagens:', error);
+            showToast(`Erro na mescla: ${error.message || 'falha desconhecida'}`);
+            return null;
+        } finally {
+            decoded.forEach(item => {
+                try {
+                    item.revoke();
+                } catch (_) {
+                    // ignore
+                }
+            });
+            mergeInProgressIds.delete(bookmark.id);
+        }
+    }
+
+    async function saveMergedImageToGallery(bookmark, mergeInfo) {
+        if (!bookmark || !mergeInfo || !mergeInfo.blob) return null;
+
+        const handle = extractHandle(bookmark.postUrl) || 'unknown';
+        const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
+        const fileName = `@${handle}_${postId}_merged_${Date.now()}.jpg`;
+
+        const mergedUrl = await uploadBlobToCatbox(mergeInfo.blob, fileName);
+        if (!mergedUrl || !mergedUrl.startsWith('https://files.catbox.moe/')) {
+            throw new Error('Catbox não retornou URL válida para a imagem mesclada');
+        }
+
+        const bookmarks = getBookmarks();
+        const bmIdx = bookmarks.findIndex(b => b.id === bookmark.id);
+        if (bmIdx !== -1) {
+            bookmarks[bmIdx].mergedImageUrl = mergedUrl;
+            bookmarks[bmIdx].mergedImageUpdatedAt = new Date().toISOString();
+            saveBookmarks(bookmarks);
+        }
+
+        bookmark.mergedImageUrl = mergedUrl;
+        bookmark.mergedImageUpdatedAt = new Date().toISOString();
+
+        const settings = getSettings();
+        const mergedFileId = extractCatboxFileId(mergedUrl);
+        if (settings.catboxAlbumShort && mergedFileId) {
+            try {
+                await addToCatboxAlbum([mergedFileId]);
+            } catch (albumError) {
+                console.warn('[X-Bookmark] Falha ao adicionar mescla no album:', albumError.message || albumError);
+            }
+        }
+
+        console.log('[X-Bookmark] Mescla salva na galeria:', {
+            bookmarkId: bookmark.id,
+            mergedUrl
+        });
+
+        return mergedUrl;
+    }
+
     function downloadBookmarkImages(bookmark) {
         if (!bookmark || !bookmark.images || bookmark.images.length === 0) {
             showToast('Nenhuma imagem para baixar');
+            return;
+        }
+
+        if (bookmark.mergedImageUrl) {
+            const mergedFilename = getMergedImageFilename(bookmark);
+            downloadImage(bookmark.mergedImageUrl, mergedFilename);
+            showToast('Baixando imagem mesclada...');
+            selectedItems.clear();
             return;
         }
 
@@ -831,12 +1065,20 @@
         }
 
         const bookmarks = getBookmarks();
-        let totalImages = 0;
+        let totalFiles = 0;
         let delayOffset = 0;
 
         selectedItems.forEach(id => {
             const bookmark = bookmarks.find(b => b.id === id);
             if (bookmark && bookmark.images) {
+                if (bookmark.mergedImageUrl) {
+                    const mergedFilename = getMergedImageFilename(bookmark);
+                    setTimeout(() => downloadImage(bookmark.mergedImageUrl, mergedFilename), delayOffset * 300);
+                    delayOffset++;
+                    totalFiles++;
+                    return;
+                }
+
                 const handle = extractHandle(bookmark.postUrl) || 'unknown';
                 const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
 
@@ -847,12 +1089,12 @@
 
                     setTimeout(() => downloadImage(url, filename), delayOffset * 300);
                     delayOffset++;
-                    totalImages++;
+                    totalFiles++;
                 });
             }
         });
 
-        showToast(`Baixando ${totalImages} imagem(ns) de ${selectedItems.size} bookmark(s)...`);
+        showToast(`Baixando ${totalFiles} arquivo(s) de ${selectedItems.size} bookmark(s)...`);
         selectedItems.clear();
         updateGalleryContent();
         updateBulkUI();
@@ -3191,6 +3433,10 @@
             for (const id of idsArray) {
                 const bm = allBookmarks.find(b => b.id === id);
                 if (bm?.images) {
+                    if (bm.mergedImageUrl && bm.mergedImageUrl.startsWith('https://')) {
+                        continue;
+                    }
+
                     // Contar apenas imagens sem backup
                     const needsBackup = bm.images.filter((_, idx) =>
                         !(bm.catboxUrls?.[idx]?.startsWith('https://'))
@@ -3355,12 +3601,28 @@
                 item.style = 'background: #15181c; border-radius: 12px; overflow: hidden; border: 1px solid #333; display: flex; gap: 15px; padding: 12px; align-items: center;';
 
                 const thumb = document.createElement('img');
-                const thumbData = getImageUrl(b, 0);
+                const hasMerged = !!b.mergedImageUrl;
+                const thumbData = hasMerged
+                    ? { url: b.mergedImageUrl, isFallback: false, hasCatboxBackup: true }
+                    : getImageUrl(b, 0);
                 thumb.src = thumbData.url || '';
                 thumb.style = `width: ${previewSize}px; height: ${previewSize}px; object-fit: cover; border-radius: 8px; cursor: pointer; flex-shrink: 0; ${thumbData.isFallback && b.catboxUrls ? 'border: 2px solid #f59e0b;' : ''}`;
-                if (thumbData.isFallback && b.catboxUrls) thumb.title = '⚠️ Usando imagem do Twitter (backup falhou)';
+                if (hasMerged) {
+                    thumb.title = '🧩 Usando imagem mesclada salva';
+                } else if (thumbData.isFallback && b.catboxUrls) {
+                    thumb.title = '⚠️ Usando imagem do Twitter (backup falhou)';
+                }
                 // Fallback chain: 4096x4096 → large → Catbox
                 thumb.onerror = () => {
+                    if (hasMerged) {
+                        const fallbackThumb = getImageUrl(b, 0).url || b.images?.[0];
+                        if (fallbackThumb && thumb.src !== fallbackThumb) {
+                            thumb.src = fallbackThumb;
+                            thumb.title = '⚠️ Mescla indisponível, mostrando original';
+                            return;
+                        }
+                    }
+
                     const catboxUrl = b.catboxUrls?.[0];
                     const failedUrl = thumb.src;
                     const debugMode = getSettings().debugMode;
@@ -3388,10 +3650,10 @@
                         thumb.title = '⚠️ Usando backup do Catbox (Twitter indisponível)';
                     }
                 };
-                thumb.onclick = () => b.images?.length > 1 ? showDetails(b) : window.open(thumbData.url, '_blank');
+                thumb.onclick = () => (b.images?.length > 1 || b.mergedImageUrl) ? showDetails(b) : window.open(thumbData.url, '_blank');
 
                 // Preview no hover
-                thumb.onmouseenter = (e) => showPreview(e, b.images?.[0]);
+                thumb.onmouseenter = (e) => showPreview(e, b.mergedImageUrl || b.images?.[0]);
                 thumb.onmouseleave = hidePreview;
 
                 const info = document.createElement('div');
@@ -3419,7 +3681,9 @@
                 });
 
                 const imgCount = document.createElement('span');
-                imgCount.innerText = `🖼️ ${b.images?.length || 0} foto(s)`;
+                imgCount.innerText = b.mergedImageUrl
+                    ? `🖼️ ${b.images?.length || 0} foto(s) • mesclada`
+                    : `🖼️ ${b.images?.length || 0} foto(s)`;
                 imgCount.style = 'color: #888; font-size: 11px;';
 
                 info.appendChild(handle);
@@ -3477,12 +3741,14 @@
             item.onmouseout = () => item.style.transform = 'scale(1)';
 
             const imgContainer = document.createElement('div');
-            const numImgs = b.images ? b.images.length : 1;
+            const hasMerged = !!b.mergedImageUrl;
+            const numImgs = hasMerged ? 1 : (b.images ? b.images.length : 1);
+            const originalNumImgs = b.images ? b.images.length : 0;
             imgContainer.style = `display: grid; grid-template-columns: ${numImgs > 1 ? '1fr 1fr' : '1fr'}; gap: 2px; background: #000; cursor: pointer; height: ${gridHeight}px; position: relative;`;
             imgContainer.title = numImgs > 1 ? 'Clique para ver todas as imagens' : 'Clique para abrir imagem';
 
             imgContainer.onclick = () => {
-                if (numImgs > 1) {
+                if (numImgs > 1 || hasMerged) {
                     showDetails(b);
                 } else {
                     // Usar URL atual da imagem (pode ser Catbox ou Twitter após fallback)
@@ -3492,19 +3758,24 @@
                 }
             };
 
-            const displayImages = b.images ? b.images.slice(0, 4) : [];
+            const displayImages = hasMerged ? [b.mergedImageUrl] : (b.images ? b.images.slice(0, 4) : []);
             let backupCount = 0;
             let fallbackCount = 0;
-            displayImages.forEach((src, idx) => {
-                const img = document.createElement('img');
-                const imgData = getImageUrl(b, idx);
-                img.src = imgData.url;
-                // Contar baseado em hasCatboxBackup, não isFallback
-                if (imgData.hasCatboxBackup) {
+
+            for (let i = 0; i < originalNumImgs; i++) {
+                if (b.catboxUrls?.[i]?.startsWith('https://')) {
                     backupCount++;
                 } else {
                     fallbackCount++;
                 }
+            }
+
+            displayImages.forEach((src, idx) => {
+                const img = document.createElement('img');
+                const imgData = hasMerged
+                    ? { url: b.mergedImageUrl, hasCatboxBackup: true }
+                    : getImageUrl(b, idx);
+                img.src = imgData.url;
                 let itemHeight = `${gridHeight}px`;
                 if (numImgs > 1) {
                     itemHeight = numImgs === 2 ? `${gridHeight}px` : `${Math.floor(gridHeight / 2) - 1}px`;
@@ -3512,6 +3783,15 @@
                 img.style = `width: 100%; height: ${itemHeight}; object-fit: cover; display: block; pointer-events: none;`;
                 // Fallback chain: 4096x4096 → large → Catbox
                 img.onerror = () => {
+                    if (hasMerged) {
+                        const fallbackThumb = getImageUrl(b, 0).url || b.images?.[0];
+                        if (fallbackThumb && img.src !== fallbackThumb) {
+                            img.src = fallbackThumb;
+                            item.style.border = '1px solid #f59e0b';
+                            return;
+                        }
+                    }
+
                     const catboxUrl = b.catboxUrls?.[idx];
                     const failedUrl = img.src;
                     const debugMode = getSettings().debugMode;
@@ -3561,7 +3841,13 @@
             if (!settings.hideOverlays) {
                 const backupBadge = document.createElement('div');
                 backupBadge.className = 'main-badge';
-                if (backupCount > 0 && fallbackCount === 0) {
+                if (hasMerged) {
+                    // Mescla salva conta como backup principal
+                    backupBadge.innerHTML = ICON_CATBOX;
+                    backupBadge.title = 'Mescla salva no Catbox';
+                    backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: #667292; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
+                    imgContainer.appendChild(backupBadge);
+                } else if (backupCount > 0 && fallbackCount === 0) {
                     // Todo backup OK (Catbox)
                     backupBadge.innerHTML = ICON_CATBOX;
                     backupBadge.title = 'Imagens salvas no Catbox';
@@ -3569,8 +3855,8 @@
                     imgContainer.appendChild(backupBadge);
                 } else if (fallbackCount > 0 && backupCount > 0) {
                     // Mix de backup e fallback
-                    backupBadge.innerHTML = `${ICON_CLOUD_OFF} <span style="margin-left: 4px;">${backupCount}/${numImgs}</span>`;
-                    backupBadge.title = `${backupCount} de ${numImgs} imagens no Catbox`;
+                    backupBadge.innerHTML = `${ICON_CLOUD_OFF} <span style="margin-left: 4px;">${backupCount}/${originalNumImgs}</span>`;
+                    backupBadge.title = `${backupCount} de ${originalNumImgs} imagens no Catbox`;
                     backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(245,158,11,0.95); color: white; padding: 6px 8px; border-radius: 8px; font-size: 10px; display: flex; align-items: center; z-index: 6; cursor: help;';
                     imgContainer.appendChild(backupBadge);
                 } else if (fallbackCount > 0) {
@@ -3579,6 +3865,21 @@
                     backupBadge.title = 'Usando imagens do Twitter (sem backup)';
                     backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(113,118,123,0.95); color: white; padding: 6px; border-radius: 8px; font-size: 10px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
                     imgContainer.appendChild(backupBadge);
+                }
+
+                if (hasMerged) {
+                    const mergeBadge = document.createElement('div');
+                    mergeBadge.className = 'merge-badge';
+                    mergeBadge.innerHTML = ICON_MERGE;
+                    mergeBadge.title = 'Imagem mesclada salva';
+                    mergeBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(245,158,11,0.95); color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 7; cursor: help;';
+
+                    const hasMainBadge = !!imgContainer.querySelector('.main-badge');
+                    if (hasMainBadge) {
+                        mergeBadge.style.right = '46px';
+                    }
+
+                    imgContainer.appendChild(mergeBadge);
                 }
             }
 
@@ -3853,6 +4154,16 @@
             padding: 40px; overflow-y: auto; color: white;
         `;
 
+        let mergedPreviewObjectUrl = null;
+        let showingMerged = false;
+
+        const cleanupMergedPreview = () => {
+            if (mergedPreviewObjectUrl) {
+                URL.revokeObjectURL(mergedPreviewObjectUrl);
+                mergedPreviewObjectUrl = null;
+            }
+        };
+
         const header = document.createElement('div');
         header.style = 'width: 100%; max-width: 1200px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;';
 
@@ -3871,6 +4182,7 @@
         editLinksBtn.onmouseenter = () => { editLinksBtn.style.background = 'rgba(29,155,240,0.1)'; };
         editLinksBtn.onmouseleave = () => { editLinksBtn.style.background = 'transparent'; };
         editLinksBtn.onclick = () => showEditLinksModal(bookmark, () => {
+            cleanupMergedPreview();
             detailModal.remove();
             // Reabrir com dados atualizados
             const updatedBookmarks = getBookmarks();
@@ -3880,56 +4192,165 @@
         });
         btnContainer.appendChild(editLinksBtn);
 
+        const imgList = document.createElement('div');
+        imgList.style = 'display: flex; flex-wrap: wrap; gap: 20px; width: 100%; max-width: 1200px; padding-bottom: 50px; justify-content: center;';
+
+        const renderOriginalImages = () => {
+            imgList.innerHTML = '';
+
+            bookmark.images.forEach((src, idx) => {
+                const item = document.createElement('div');
+                item.style = 'background: #15181c; border-radius: 16px; overflow: hidden; border: 1px solid #333; width: 280px;';
+
+                const img = document.createElement('img');
+                // Usar formatTwitterUrl para garantir 4k
+                img.src = formatTwitterUrl(src);
+                img.style = 'width: 100%; height: 280px; object-fit: cover; cursor: pointer; display: block;';
+
+                // Chain fallback: 4k → large → Catbox
+                img.onerror = () => {
+                    const failedUrl = img.src;
+                    const debugMode = getSettings().debugMode;
+
+                    if (img.src.includes('name=4096x4096')) {
+                        // Tentar large
+                        if (debugMode) {
+                            console.log('[X-Bookmark] Details: 4k failed, trying large | URL:', failedUrl);
+                        } else {
+                            console.log('[X-Bookmark] Details: 4k failed, trying large');
+                        }
+                        img.src = img.src.replace('name=4096x4096', 'name=large');
+                    } else if (bookmark.catboxUrls?.[idx]) {
+                        // Fallback para Catbox
+                        if (debugMode) {
+                            console.log('[X-Bookmark] Details: Large failed, using Catbox | Failed URL:', failedUrl, '| Catbox:', bookmark.catboxUrls[idx]);
+                        } else {
+                            console.log('[X-Bookmark] Details: Large failed, using Catbox');
+                        }
+                        img.src = bookmark.catboxUrls[idx];
+                    }
+                };
+
+                img.onclick = () => window.open(img.src, '_blank');
+
+                item.appendChild(img);
+                imgList.appendChild(item);
+            });
+        };
+
+        const renderMergedPreview = (url, mergeInfo = null) => {
+            imgList.innerHTML = '';
+
+            const item = document.createElement('div');
+            item.style = 'background: #15181c; border-radius: 16px; overflow: hidden; border: 1px solid #333; width: min(100%, 1200px);';
+
+            const meta = document.createElement('div');
+            meta.style = 'padding: 12px 16px; color: #f59e0b; font-size: 12px; border-bottom: 1px solid #2a2a2a;';
+            if (mergeInfo && mergeInfo.width && mergeInfo.height) {
+                meta.innerText = `${bookmark.images.length} imagens mescladas • ${mergeInfo.width}x${mergeInfo.height}`;
+            } else {
+                meta.innerText = `${bookmark.images.length} imagens mescladas • versão salva`;
+            }
+
+            const img = document.createElement('img');
+            img.src = url;
+            img.style = 'width: 100%; height: auto; display: block; cursor: pointer;';
+            img.onclick = () => window.open(url, '_blank');
+
+            item.appendChild(meta);
+            item.appendChild(img);
+            imgList.appendChild(item);
+        };
+
+        if ((bookmark.images?.length || 0) > 1) {
+            const mergeBtn = document.createElement('button');
+            const getMergeIdleLabel = () => bookmark.mergedImageUrl
+                ? `${ICON_MERGE} <span>Ver Mesclada Salva</span>`
+                : `${ICON_MERGE} <span>Mesclar Imagens</span>`;
+
+            mergeBtn.innerHTML = getMergeIdleLabel();
+            mergeBtn.style = 'background: transparent; color: #f59e0b; border: 1px solid #f59e0b; padding: 10px 20px; cursor: pointer; border-radius: 9999px; font-weight: bold; display: flex; align-items: center; gap: 6px; transition: all 0.2s;';
+            mergeBtn.onmouseenter = () => { mergeBtn.style.background = 'rgba(245,158,11,0.12)'; };
+            mergeBtn.onmouseleave = () => { mergeBtn.style.background = 'transparent'; };
+            mergeBtn.onclick = async () => {
+                if (showingMerged) {
+                    showingMerged = false;
+                    titleEl.innerText = 'Imagens do Post';
+                    mergeBtn.innerHTML = getMergeIdleLabel();
+                    renderOriginalImages();
+                    return;
+                }
+
+                if (bookmark.mergedImageUrl) {
+                    showingMerged = true;
+                    titleEl.innerText = 'Imagem Mesclada Salva';
+                    renderMergedPreview(bookmark.mergedImageUrl, null);
+                    mergeBtn.innerHTML = `${ICON_GRID} <span>Ver Originais</span>`;
+                    return;
+                }
+
+                mergeBtn.disabled = true;
+                mergeBtn.style.opacity = '0.65';
+                mergeBtn.innerHTML = `${ICON_MERGE} <span>Mesclando...</span>`;
+
+                try {
+                    const mergeInfo = await mergeBookmarkImages(bookmark);
+                    if (!mergeInfo) {
+                        mergeBtn.innerHTML = getMergeIdleLabel();
+                        return;
+                    }
+
+                    mergeBtn.innerHTML = `${ICON_CLOUD} <span>Salvando...</span>`;
+                    const savedMergedUrl = await saveMergedImageToGallery(bookmark, mergeInfo);
+
+                    cleanupMergedPreview();
+                    let previewUrl = savedMergedUrl;
+                    if (!previewUrl) {
+                        mergedPreviewObjectUrl = URL.createObjectURL(mergeInfo.blob);
+                        previewUrl = mergedPreviewObjectUrl;
+                    }
+
+                    showingMerged = true;
+                    titleEl.innerText = savedMergedUrl ? 'Imagem Mesclada Salva' : 'Imagem Mesclada';
+                    renderMergedPreview(previewUrl, mergeInfo);
+                    mergeBtn.innerHTML = `${ICON_GRID} <span>Ver Originais</span>`;
+                    showToast(savedMergedUrl ? 'Mescla salva na galeria' : 'Mescla criada (não foi possível salvar)');
+                    updateGalleryContent();
+                } catch (saveError) {
+                    console.error('[X-Bookmark] Falha ao salvar mescla na galeria:', saveError);
+                    showToast(`Erro ao salvar mescla: ${saveError.message || 'falha desconhecida'}`);
+                    mergeBtn.innerHTML = getMergeIdleLabel();
+                } finally {
+                    mergeBtn.disabled = false;
+                    mergeBtn.style.opacity = '1';
+                }
+            };
+
+            if (bookmark.mergedImageUrl) {
+                showingMerged = true;
+                titleEl.innerText = 'Imagem Mesclada Salva';
+                renderMergedPreview(bookmark.mergedImageUrl, null);
+                mergeBtn.innerHTML = `${ICON_GRID} <span>Ver Originais</span>`;
+            }
+
+            btnContainer.appendChild(mergeBtn);
+        }
+
         const closeBtn = document.createElement('button');
         closeBtn.innerText = 'Voltar';
         closeBtn.style = 'background: #333; color: white; border: none; padding: 10px 25px; cursor: pointer; border-radius: 9999px; font-weight: bold;';
-        closeBtn.onclick = () => detailModal.remove();
+        closeBtn.onclick = () => {
+            cleanupMergedPreview();
+            detailModal.remove();
+        };
         btnContainer.appendChild(closeBtn);
 
         header.appendChild(btnContainer);
         detailModal.appendChild(header);
 
-        const imgList = document.createElement('div');
-        imgList.style = 'display: flex; flex-wrap: wrap; gap: 20px; width: 100%; max-width: 1200px; padding-bottom: 50px; justify-content: center;';
-
-        bookmark.images.forEach((src, idx) => {
-            const item = document.createElement('div');
-            item.style = 'background: #15181c; border-radius: 16px; overflow: hidden; border: 1px solid #333; width: 280px;';
-
-            const img = document.createElement('img');
-            // Usar formatTwitterUrl para garantir 4k
-            img.src = formatTwitterUrl(src);
-            img.style = 'width: 100%; height: 280px; object-fit: cover; cursor: pointer; display: block;';
-
-            // Chain fallback: 4k → large → Catbox
-            img.onerror = () => {
-                const failedUrl = img.src;
-                const debugMode = getSettings().debugMode;
-
-                if (img.src.includes('name=4096x4096')) {
-                    // Tentar large
-                    if (debugMode) {
-                        console.log('[X-Bookmark] Details: 4k failed, trying large | URL:', failedUrl);
-                    } else {
-                        console.log('[X-Bookmark] Details: 4k failed, trying large');
-                    }
-                    img.src = img.src.replace('name=4096x4096', 'name=large');
-                } else if (bookmark.catboxUrls?.[idx]) {
-                    // Fallback para Catbox
-                    if (debugMode) {
-                        console.log('[X-Bookmark] Details: Large failed, using Catbox | Failed URL:', failedUrl, '| Catbox:', bookmark.catboxUrls[idx]);
-                    } else {
-                        console.log('[X-Bookmark] Details: Large failed, using Catbox');
-                    }
-                    img.src = bookmark.catboxUrls[idx];
-                }
-            };
-
-            img.onclick = () => window.open(img.src, '_blank');
-
-            item.appendChild(img);
-            imgList.appendChild(item);
-        });
+        if (!showingMerged) {
+            renderOriginalImages();
+        }
 
         detailModal.appendChild(imgList);
         document.body.appendChild(detailModal);

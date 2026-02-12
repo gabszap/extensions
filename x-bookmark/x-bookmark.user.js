@@ -8,7 +8,7 @@
 // @grant       GM_xmlhttpRequest
 // @grant       GM_download
 // @connect     catbox.moe
-// @version     2.6.67
+// @version     2.6.78
 // @author      Antigravity
 // @description Substitui o botão do Grok por um Bookmark interno
 // ==/UserScript==
@@ -31,12 +31,14 @@
     const ICON_EXTERNAL_LINK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
     const ICON_CALENDAR = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>`;
     const ICON_DOWNLOAD = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>`;
+    const ICON_STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l2.037 6.27a1 1 0 0 0 .95.69h6.593c.969 0 1.371 1.24.588 1.81l-5.334 3.876a1 1 0 0 0-.364 1.118l2.037 6.27c.3.922-.755 1.688-1.539 1.118l-5.334-3.876a1 1 0 0 0-1.176 0l-5.334 3.876c-.783.57-1.838-.196-1.539-1.118l2.037-6.27a1 1 0 0 0-.364-1.118L.881 11.697c-.783-.57-.38-1.81.588-1.81h6.593a1 1 0 0 0 .95-.69z"/></svg>`;
     const ICON_MERGE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="10" rx="2"/><rect x="11" y="11" width="10" height="10" rx="2"/></svg>`;
     const ICON_PENCIL_SMALL = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
     const ICON_USER = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     const ICON_CLOUD = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`;
     const ICON_CLOUD_OFF = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 8 5.17"/></svg>`;
     const ICON_CATBOX = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 135 169" fill="currentColor" style="vertical-align: middle;"><path d="M48 36.3c-14.2 7.2-27.5 15.2-30.1 18.3-1 1.3-.9 2.8.9 8.7 1.2 4 3.3 10.7 4.6 14.9l2.3 7.8-5.2 2.9c-13.7 7.7-17.1 22.2-7.9 32.9 7.6 9 25 9.7 26.9 1.3.9-4-1.2-8-5.5-10.8-6.9-4.4-8-5.4-8-7.2 0-1.6 2.9-5.1 4.2-5.1.3 0 1.3 1.8 2.3 4 1.2 2.6 3.4 5 6.4 6.9 2.5 1.6 8 5.3 12.1 8.2 8.2 5.7 35.8 19.9 38.7 19.9.9 0 5.5-2.6 10.1-5.7 7.2-5 8.5-5.6 10.2-4.5 1.1.7 2.7 1.2 3.5 1.2 4 0 12.5-7.8 12.5-11.4 0-1.1-.7-2.9-1.5-3.9-1.2-1.7-1-2.4 1.6-6 2.8-4.1 2.9-4.7 3.9-22.7.5-10.2 1-22.6 1-27.7v-9.1l-3.7-2.9c-4.1-3.1-7.6-5.3-19.2-11.6l-7.3-4-5.4 2.2-5.3 2.2-12.5-3C70.7 30.4 64.5 29 63.8 29c-.7.1-7.8 3.3-15.8 7.3m28.3-1.7c4.8.9 8.7 2 8.7 2.4 0 .9-11.5 8.7-16.9 11.4-5 2.6-12.8 8.5-13.4 10.1-.3.7.3 2.5 1.4 3.9 1.9 2.4 1.9 2.5 0 3.1-1.1.3-7-.5-13.2-1.9s-11.5-2.4-11.7-2.1c-.3.2.4.7 1.4 1.1 1 .3 9.1 4 17.9 8.1 8.8 4.2 19.2 9 23 10.8 11.4 5.4 12.3 5.4 21.8-.1 7.9-4.5 15.3-9.9 22.7-16.3 6.5-5.7.7-3.3-10.8 4.4C101 73.6 95.8 77 95.6 77c-.3 0-2.8 1.4-5.6 3.2l-5 3.1-2.8-2.5c-1.5-1.4-3.8-3.2-5.2-4.2-4-2.7-17-15.8-17-17.2 0-2.2 23.5-17.7 35-23 5.3-2.5 5.5-2.5 8.5-.8 4.9 2.9 16.8 11.9 19.5 14.8l2.5 2.8.3 25.3c.3 23.4.2 25.6-1.5 27.9-2.4 3.4-4.5 3.3-4.1-.2.3-2.3-.1-2.7-2.3-3-1.9-.2-4.6 1.1-9.5 4.9-8.1 6.1-10.3 8.6-10.4 11.6 0 1.8.6 2.3 2.5 2.3 1.5 0 2.5.6 2.5 1.4 0 1.9-10.8 8.6-13.8 8.6-6.2 0-41.8-17.9-49.6-24.9-1.6-1.4-3.9-4.9-5.1-7.6-2.7-6-10.7-37.8-10.3-40.8.4-2.9 13-11.7 31.3-22.2 4.7-2.6 8.8-4.3 10-4.1 1.1.3 5.9 1.2 10.8 2.2M28.8 90.2c2.1 2.1 1.3 4.8-2.3 8.2-2.7 2.6-3.5 4.1-3.5 6.9 0 4.2 1.3 5.6 8 9.3 5.7 3.1 7 5.6 4.4 8.5-2.2 2.5-10.5 2.6-15.4.1-4.1-2-7.7-7-8.6-12-1.3-6.6 3.5-15.3 11-19.7 4.8-2.9 4.8-2.9 6.4-1.3m88.5 21c1.8 1.1 3.8 2.8 4.5 3.6 1.4 1.8 1.6 6.2.3 6.2-.5 0-1.1.9-1.4 2s-1.4 2-2.4 2-2.4.5-3 1.1c-1.4 1.4-4.5-.2-8.4-4.4-3.5-3.8-3.2-7.1.9-10.4 3.4-2.9 5.5-2.9 9.5-.1"/></svg>`;
+    const ICON_CATBOX_BADGE = ICON_CLOUD.replace('width="16"', 'width="14"').replace('height="16"', 'height="14"');
     const ICON_TWITTER = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 32 32" fill="currentColor" style="vertical-align: middle;"><path d="M25.2 1.54h4.91l-10.72 12.25L32 30.46h-9.87l-7.73-10.11-8.85 10.11H0.63l11.47-13.11L0 1.54h10.13l6.99 9.24ZM23.48 27.53h2.72L8.65 4.32H5.73Z"/></svg>`;
     const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
     const ICON_CHEVRON_UP = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>`;
@@ -3251,7 +3253,7 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.95); z-index: 9999;
             display: flex; flex-direction: column; align-items: center;
-            padding: 20px; overflow-y: auto; color: white;
+            padding: 20px 20px 120px 20px; overflow-y: auto; color: white;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         `;
 
@@ -3324,8 +3326,10 @@
             <option value="oldest_added">Adicionado (Antigo)</option>
             <option value="newest_post">Postado (Recente)</option>
             <option value="oldest_post">Postado (Antigo)</option>
+            <option value="favorites_first">Favoritos</option>
             <option value="most_images">Mais Fotos</option>
         `;
+        sortSelect.value = currentFilter.sort;
         sortSelect.onchange = (e) => {
             currentFilter.sort = e.target.value;
             updateGalleryContent();
@@ -3365,7 +3369,7 @@
         // Bulk Actions Container
         const bulkContainer = document.createElement('div');
         bulkContainer.id = 'x-bookmark-bulk-actions';
-        bulkContainer.style = 'display: none; align-items: center; gap: 10px; margin-left: auto;';
+        bulkContainer.style = 'display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10001; align-items: center; flex-wrap: wrap; justify-content: center; gap: 10px; width: max-content; max-width: calc(100vw - 24px); padding: 10px 12px; border-radius: 16px; border: 1px solid #2f2f2f; background: rgba(18,18,18,0.92); backdrop-filter: blur(8px); box-shadow: 0 10px 26px rgba(0,0,0,0.45);';
 
         const bulkInfo = document.createElement('span');
         bulkInfo.id = 'x-bookmark-bulk-info';
@@ -3404,6 +3408,13 @@
         bulkTagBtn.innerHTML = `${ICON_TAG} <span>Gerenciar Tags</span>`;
         bulkTagBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #1d9bf0; background: transparent; color: #1d9bf0; cursor: pointer; display: flex; align-items: center; gap: 6px;';
         bulkTagBtn.onclick = bulkAddTag;
+
+        // Botão Favoritar - amarelo
+        const bulkFavoriteBtn = document.createElement('button');
+        bulkFavoriteBtn.id = 'x-bookmark-bulk-favorite';
+        bulkFavoriteBtn.innerHTML = `${ICON_STAR} <span>Favoritar</span>`;
+        bulkFavoriteBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #f59e0b; background: transparent; color: #f59e0b; cursor: pointer; display: flex; align-items: center; gap: 6px;';
+        bulkFavoriteBtn.onclick = bulkFavorite;
 
         // Botão Download - verde
         const bulkDownloadBtn = document.createElement('button');
@@ -3473,10 +3484,10 @@
         bulkContainer.appendChild(bulkSelectAllBtn);
         bulkContainer.appendChild(bulkClearBtn);
         bulkContainer.appendChild(bulkTagBtn);
+        bulkContainer.appendChild(bulkFavoriteBtn);
         bulkContainer.appendChild(bulkDownloadBtn);
         bulkContainer.appendChild(bulkBackupBtn);
         bulkContainer.appendChild(bulkDelBtn);
-        toolbar.appendChild(bulkContainer);
 
         modal.appendChild(toolbar);
 
@@ -3491,6 +3502,9 @@
         container.id = 'x-bookmark-container';
         container.style = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; width: 100%; max-width: 1200px; align-items: start;';
         modal.appendChild(container);
+
+        // Bulk actions flutuante para facilitar uso durante scroll
+        modal.appendChild(bulkContainer);
 
         document.body.appendChild(modal);
         updateGalleryContent();
@@ -3570,6 +3584,13 @@
                 break;
             case 'oldest_post':
                 bookmarks.sort((a, b) => new Date(a.postDate || 0) - new Date(b.postDate || 0));
+                break;
+            case 'favorites_first':
+                bookmarks.sort((a, b) => {
+                    const favDiff = (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0);
+                    if (favDiff !== 0) return favDiff;
+                    return new Date(b.timestamp) - new Date(a.timestamp);
+                });
                 break;
             case 'most_images':
                 bookmarks.sort((a, b) => {
@@ -3828,7 +3849,7 @@
                         // Atualizar badge principal para Catbox
                         const mainBadge = imgContainer.querySelector('.main-badge');
                         if (mainBadge) {
-                            mainBadge.innerHTML = ICON_CATBOX;
+                            mainBadge.innerHTML = ICON_CATBOX_BADGE;
                             mainBadge.title = 'Usando backup do Catbox (Twitter indisponível)';
                             mainBadge.style.background = '#667292';
                         }
@@ -3839,17 +3860,22 @@
 
             // Indicador de status do backup
             if (!settings.hideOverlays) {
+                const nextTopRightBadgeOffset = () => {
+                    const badgeCount = imgContainer.querySelectorAll('.main-badge, .merge-badge, .favorite-badge').length;
+                    return 10 + (badgeCount * 30);
+                };
+
                 const backupBadge = document.createElement('div');
                 backupBadge.className = 'main-badge';
                 if (hasMerged) {
                     // Mescla salva conta como backup principal
-                    backupBadge.innerHTML = ICON_CATBOX;
+                    backupBadge.innerHTML = ICON_CATBOX_BADGE;
                     backupBadge.title = 'Mescla salva no Catbox';
                     backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: #667292; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
                     imgContainer.appendChild(backupBadge);
                 } else if (backupCount > 0 && fallbackCount === 0) {
                     // Todo backup OK (Catbox)
-                    backupBadge.innerHTML = ICON_CATBOX;
+                    backupBadge.innerHTML = ICON_CATBOX_BADGE;
                     backupBadge.title = 'Imagens salvas no Catbox';
                     backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: #667292; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
                     imgContainer.appendChild(backupBadge);
@@ -3874,12 +3900,26 @@
                     mergeBadge.title = 'Imagem mesclada salva';
                     mergeBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(245,158,11,0.95); color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 7; cursor: help;';
 
-                    const hasMainBadge = !!imgContainer.querySelector('.main-badge');
-                    if (hasMainBadge) {
-                        mergeBadge.style.right = '46px';
-                    }
+                    mergeBadge.style.right = `${nextTopRightBadgeOffset()}px`;
 
                     imgContainer.appendChild(mergeBadge);
+                }
+
+                if (b.isFavorite) {
+                    const favoriteBadge = document.createElement('div');
+                    favoriteBadge.className = 'favorite-badge';
+                    favoriteBadge.innerHTML = ICON_STAR;
+                    favoriteBadge.title = 'Favorito';
+                    favoriteBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(245,158,11,0.95); color: #fff4bf; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 8; cursor: help;';
+                    favoriteBadge.style.right = `${nextTopRightBadgeOffset()}px`;
+
+                    const starSvg = favoriteBadge.querySelector('svg');
+                    if (starSvg) {
+                        starSvg.setAttribute('width', '14');
+                        starSvg.setAttribute('height', '14');
+                    }
+
+                    imgContainer.appendChild(favoriteBadge);
                 }
             }
 
@@ -3988,13 +4028,34 @@
     function updateBulkUI() {
         const bulkContainer = document.getElementById('x-bookmark-bulk-actions');
         const bulkInfo = document.getElementById('x-bookmark-bulk-info');
+        const bulkFavoriteBtn = document.getElementById('x-bookmark-bulk-favorite');
         if (bulkContainer && bulkInfo) {
             const count = selectedItems.size;
             if (count > 0) {
                 bulkContainer.style.display = 'flex';
                 bulkInfo.innerText = count === 1 ? '1 item selecionado' : `${count} itens selecionados`;
+
+                if (bulkFavoriteBtn) {
+                    const bookmarks = getBookmarks();
+                    const selectedBookmarks = bookmarks.filter(b => selectedItems.has(b.id));
+                    const allFavorited = selectedBookmarks.length > 0 && selectedBookmarks.every(b => !!b.isFavorite);
+
+                    if (allFavorited) {
+                        bulkFavoriteBtn.innerHTML = `${ICON_STAR} <span>Desfavoritar</span>`;
+                        bulkFavoriteBtn.style.borderColor = '#f59e0b';
+                        bulkFavoriteBtn.style.color = '#f59e0b';
+                    } else {
+                        bulkFavoriteBtn.innerHTML = `${ICON_STAR} <span>Favoritar</span>`;
+                        bulkFavoriteBtn.style.borderColor = '#f59e0b';
+                        bulkFavoriteBtn.style.color = '#f59e0b';
+                    }
+                }
             } else {
                 bulkContainer.style.display = 'none';
+
+                if (bulkFavoriteBtn) {
+                    bulkFavoriteBtn.innerHTML = `${ICON_STAR} <span>Favoritar</span>`;
+                }
             }
         }
     }
@@ -4011,6 +4072,47 @@
             updateBulkUI();
             showToast(`${count} bookmark(s) excluído(s)`);
         });
+    }
+
+    function bulkFavorite() {
+        if (selectedItems.size === 0) return;
+
+        const bookmarks = getBookmarks();
+        const selectedBookmarks = bookmarks.filter(b => selectedItems.has(b.id));
+        const allFavorited = selectedBookmarks.length > 0 && selectedBookmarks.every(b => !!b.isFavorite);
+        let changed = 0;
+
+        bookmarks.forEach(bookmark => {
+            if (!selectedItems.has(bookmark.id)) return;
+
+            if (allFavorited) {
+                if (bookmark.isFavorite) {
+                    bookmark.isFavorite = false;
+                    changed++;
+                }
+            } else if (!bookmark.isFavorite) {
+                bookmark.isFavorite = true;
+                changed++;
+            }
+        });
+
+        if (changed === 0) {
+            selectedItems.clear();
+            updateGalleryContent();
+            updateBulkUI();
+            showToast(allFavorited ? 'Itens já estavam desfavoritados' : 'Itens já estavam favoritados');
+            return;
+        }
+
+        saveBookmarks(bookmarks);
+        selectedItems.clear();
+        updateGalleryContent();
+        updateBulkUI();
+        if (allFavorited) {
+            showToast(changed === 1 ? '1 item desfavoritado' : `${changed} itens desfavoritados`);
+        } else {
+            showToast(changed === 1 ? '1 item favoritado' : `${changed} itens favoritados`);
+        }
     }
 
     function bulkAddTag() {

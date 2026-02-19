@@ -5,7 +5,7 @@
 // @grant       GM_getValue
 // @grant       GM_setValue
 // @grant       unsafeWindow
-// @version     1.45
+// @version     1.46
 // @author      gabszap
 // @description Script para exibir porcentagem de volume no YouTube Music e outros snippets
 // @updateURL   https://github.com/gabszap/extensions/raw/refs/heads/main/YTM-Enhanced/ytm-enhanced.main.user.js
@@ -27,6 +27,12 @@
   const STORAGE_MIGRATION_DONE_KEY = "yt-enhancer:storage-migrated-to-vm";
   const LIBRARY_REDIRECT_STORAGE_KEY = "yt-enhancer:library-redirect-playlists";
   const CONTEXT_MENU_HIDDEN_STORAGE_KEY = "yt-enhancer:hidden-context-menu-items";
+  const HIDE_UPGRADE_BUTTON_STORAGE_KEY = "yt-enhancer:hide-upgrade-button";
+  const HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY = "yt-enhancer:hide-listen-again-artists";
+  const HIDDEN_ARTISTS_STORAGE_KEY = "yt-enhancer:hidden-artists";
+  const HIDDEN_ARTIST_LABELS_STORAGE_KEY = "yt-enhancer:hidden-artist-labels";
+  const HIDDEN_HOMEPAGE_SECTIONS_STORAGE_KEY = "yt-enhancer:hidden-homepage-sections";
+  const HIDDEN_DYNAMIC_SECTIONS_STORAGE_KEY = "yt-enhancer:hidden-dynamic-sections";
   const DEFAULT_PIN_VISIBILITY_MODE = "dynamic";
   const PIN_VISIBILITY_MODES = ["always", "dynamic", "hover-only"];
   const DEFAULT_SETTINGS_THEME = {
@@ -111,6 +117,31 @@
     { id: "stats-for-nerds", label: "Estatisticas para nerds" },
   ];
 
+  const HOMEPAGE_SECTIONS = [
+    { id: "favoritos-antigos", label: "Favoritos antigos" },
+    { id: "da-sua-biblioteca", label: "Da sua biblioteca" },
+    { id: "canais-de-musica", label: "Canais de musica que voce pode gostar" },
+    { id: "da-comunidade", label: "Da comunidade" },
+    { id: "parecido-com", label: "Parecido com", matchStrapline: true, hint: "Oculta playlists e artistas similares" },
+    { id: "lancamentos", label: "Lancamentos" },
+    { id: "albuns-para-voce", label: "Albuns para voce" },
+    { id: "novidades-e-classicos", label: "Novidades e classicos" },
+    { id: "mixtapes", label: "Mixtapes criadas para voce" },
+    { id: "radios", label: "Radios para voce" },
+    { id: "playlists-em-destaque", label: "Playlists em destaque para voce" },
+    { id: "musica-indie", label: "Musica indie e alternativa" },
+    { id: "videos-recomendados", label: "Videos de musica recomendados" },
+    { id: "paradas", label: "Paradas", hint: "Charts e top musicas" },
+    { id: "tocou-nos-shorts", label: "Tocou nos Shorts" },
+    { id: "descobertas-diarias", label: "Suas descobertas diarias" },
+    { id: "continuar-ouvindo", label: "Continuar ouvindo" },
+    { id: "covers-e-remixes", label: "Covers e remixes" },
+    { id: "mixes-longos", label: "Mixes longos" },
+    { id: "programas-para-voce", label: "Programas para voce", hint: "Podcasts" },
+    { id: "musicas-em-alta", label: "Musicas em alta para voce" },
+    { id: "apresentacoes-ao-vivo", label: "Apresentaçoes ao vivo", hint: "Lives e shows ao vivo" },
+  ];
+
   function hasViolentmonkeyStorage() {
     return typeof GM_getValue === "function" && typeof GM_setValue === "function";
   }
@@ -168,6 +199,12 @@
       SETTINGS_THEME_STORAGE_KEY,
       VERSION_CACHE_STORAGE_KEY,
       CONTEXT_MENU_HIDDEN_STORAGE_KEY,
+      HIDE_UPGRADE_BUTTON_STORAGE_KEY,
+      HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY,
+      HIDDEN_ARTISTS_STORAGE_KEY,
+      HIDDEN_ARTIST_LABELS_STORAGE_KEY,
+      HIDDEN_HOMEPAGE_SECTIONS_STORAGE_KEY,
+      HIDDEN_DYNAMIC_SECTIONS_STORAGE_KEY,
     ];
 
     keysToMigrate.forEach((key) => {
@@ -903,6 +940,69 @@
   // === CONTEXT MENU DEBLOAT ===
   let hiddenContextMenuItems = getStoredValue(CONTEXT_MENU_HIDDEN_STORAGE_KEY, []);
 
+  // === UPGRADE BUTTON DEBLOAT ===
+  let hideUpgradeButton = getStoredValue(HIDE_UPGRADE_BUTTON_STORAGE_KEY, false);
+
+  function setHideUpgradeButton(hidden) {
+    hideUpgradeButton = Boolean(hidden);
+    setStoredValue(HIDE_UPGRADE_BUTTON_STORAGE_KEY, hideUpgradeButton);
+  }
+
+  // === LISTEN AGAIN ARTISTS DEBLOAT ===
+  let hideListenAgainArtists = getStoredValue(HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY, false);
+  let hiddenArtistKeys = getStoredValue(HIDDEN_ARTISTS_STORAGE_KEY, []);
+  let hiddenArtistLabels = getStoredValue(HIDDEN_ARTIST_LABELS_STORAGE_KEY, {});
+
+  if (!Array.isArray(hiddenArtistKeys)) hiddenArtistKeys = [];
+  if (!hiddenArtistLabels || typeof hiddenArtistLabels !== "object") hiddenArtistLabels = {};
+
+  function setHideListenAgainArtists(hidden) {
+    hideListenAgainArtists = Boolean(hidden);
+    setStoredValue(HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY, hideListenAgainArtists);
+  }
+
+  function saveHiddenArtists() {
+    setStoredValue(HIDDEN_ARTISTS_STORAGE_KEY, hiddenArtistKeys);
+    setStoredValue(HIDDEN_ARTIST_LABELS_STORAGE_KEY, hiddenArtistLabels);
+  }
+
+  function hideArtist(channelId, label) {
+    if (!channelId) return;
+    if (!hiddenArtistKeys.includes(channelId)) {
+      hiddenArtistKeys.push(channelId);
+    }
+    if (label) {
+      hiddenArtistLabels[channelId] = label;
+    }
+    saveHiddenArtists();
+    document.dispatchEvent(new CustomEvent("yt-enhancer:hidden-artists-change"));
+  }
+
+  function unhideArtist(channelId) {
+    hiddenArtistKeys = hiddenArtistKeys.filter((id) => id !== channelId);
+    delete hiddenArtistLabels[channelId];
+    saveHiddenArtists();
+    document.dispatchEvent(new CustomEvent("yt-enhancer:hidden-artists-change"));
+  }
+
+  function unhideAllArtists() {
+    hiddenArtistKeys = [];
+    hiddenArtistLabels = {};
+    saveHiddenArtists();
+    document.dispatchEvent(new CustomEvent("yt-enhancer:hidden-artists-change"));
+  }
+
+  function isArtistHidden(channelId) {
+    return hiddenArtistKeys.includes(channelId);
+  }
+
+  function getHiddenArtistList() {
+    return hiddenArtistKeys.map((channelId) => ({
+      channelId,
+      label: hiddenArtistLabels[channelId] || channelId,
+    }));
+  }
+
   function saveHiddenMenuItems() {
     setStoredValue(CONTEXT_MENU_HIDDEN_STORAGE_KEY, hiddenContextMenuItems);
   }
@@ -918,6 +1018,51 @@
       hiddenContextMenuItems = hiddenContextMenuItems.filter((id) => id !== itemId);
     }
     saveHiddenMenuItems();
+  }
+
+  // === HOMEPAGE SECTIONS DEBLOAT ===
+  let hiddenHomepageSections = getStoredValue(HIDDEN_HOMEPAGE_SECTIONS_STORAGE_KEY, []);
+  if (!Array.isArray(hiddenHomepageSections)) hiddenHomepageSections = [];
+
+  function saveHiddenHomepageSections() {
+    setStoredValue(HIDDEN_HOMEPAGE_SECTIONS_STORAGE_KEY, hiddenHomepageSections);
+  }
+
+  function isHomepageSectionHidden(sectionId) {
+    return hiddenHomepageSections.includes(sectionId);
+  }
+
+  function setHomepageSectionHidden(sectionId, hidden) {
+    if (hidden && !hiddenHomepageSections.includes(sectionId)) {
+      hiddenHomepageSections.push(sectionId);
+    } else if (!hidden) {
+      hiddenHomepageSections = hiddenHomepageSections.filter((id) => id !== sectionId);
+    }
+    saveHiddenHomepageSections();
+  }
+
+  // === DYNAMIC (PERSONALIZED) SECTIONS DEBLOAT ===
+  let hiddenDynamicSections = getStoredValue(HIDDEN_DYNAMIC_SECTIONS_STORAGE_KEY, []);
+  if (!Array.isArray(hiddenDynamicSections)) hiddenDynamicSections = [];
+
+  function saveHiddenDynamicSections() {
+    setStoredValue(HIDDEN_DYNAMIC_SECTIONS_STORAGE_KEY, hiddenDynamicSections);
+  }
+
+  function isDynamicSectionHidden(normalizedTitle) {
+    return hiddenDynamicSections.some((s) => s.title === normalizedTitle);
+  }
+
+  function hideDynamicSection(normalizedTitle, displayTitle) {
+    if (!isDynamicSectionHidden(normalizedTitle)) {
+      hiddenDynamicSections.push({ title: normalizedTitle, displayTitle: displayTitle });
+      saveHiddenDynamicSections();
+    }
+  }
+
+  function unhideDynamicSection(normalizedTitle) {
+    hiddenDynamicSections = hiddenDynamicSections.filter((s) => s.title !== normalizedTitle);
+    saveHiddenDynamicSections();
   }
 
   function normalizeMenuText(text) {
@@ -2103,6 +2248,236 @@
     }
   }
 
+  function debloatUpgradeButton() {
+    const guideEntries = document.querySelectorAll("ytmusic-guide-entry-renderer");
+
+    for (const entry of guideEntries) {
+      const titleEl = entry.querySelector("yt-formatted-string.title");
+      if (!titleEl) continue;
+
+      const text = titleEl.textContent.trim().toLowerCase();
+      if (text === "upgrade") {
+        entry.style.display = hideUpgradeButton ? "none" : "";
+      }
+    }
+  }
+
+  function debloatListenAgainArtists() {
+    // === Handle homepage carousel ===
+    const carouselShelves = document.querySelectorAll("ytmusic-carousel-shelf-renderer");
+
+    for (const shelf of carouselShelves) {
+      const headerLink = shelf.querySelector(
+        'ytmusic-carousel-shelf-basic-header-renderer yt-formatted-string.title a[href="listen_again"]'
+      );
+      if (!headerLink) continue;
+
+      processListenAgainItems(shelf.querySelectorAll("ytmusic-two-row-item-renderer"));
+    }
+
+    // === Handle /listen_again page (grid layout) ===
+    if (location.pathname === "/listen_again" || location.href.includes("listen_again")) {
+      const gridItems = document.querySelectorAll(
+        "ytmusic-grid-renderer ytmusic-two-row-item-renderer"
+      );
+      if (gridItems.length > 0) {
+        processListenAgainItems(gridItems);
+      }
+    }
+  }
+
+  function processListenAgainItems(items) {
+    for (const item of items) {
+      // Detect if this item is an artist (has circle-cropped thumbnail)
+      const isArtist = item.hasAttribute("has-circle-cropped-thumbnail");
+      if (!isArtist) {
+        // Not an artist — make sure it's visible and skip
+        if (item.style.display === "none" && !item.dataset.yteHiddenArtist) {
+          item.style.display = "";
+        }
+        continue;
+      }
+
+      // Extract channel ID from the link
+      const link = item.querySelector('a.image-wrapper[href*="channel/"]');
+      const href = link?.getAttribute("href") || "";
+      const channelMatch = href.match(/channel\/([A-Za-z0-9_-]+)/);
+      const channelId = channelMatch ? channelMatch[1] : null;
+
+      // Extract artist name from title
+      const titleEl = item.querySelector(".details yt-formatted-string.title");
+      const artistName = titleEl?.textContent?.trim() || "";
+
+      // Inject hide button if not already present
+      if (!item.classList.contains("yt-enhancer-artist-hide-ready") && channelId) {
+        item.classList.add("yt-enhancer-artist-hide-ready");
+        item.style.position = "relative";
+
+        const hideBtn = document.createElement("button");
+        hideBtn.type = "button";
+        hideBtn.className = "yt-enhancer-artist-hide-btn";
+        hideBtn.setAttribute("aria-label", `Ocultar ${artistName || "artista"}`);
+        hideBtn.textContent = "\u00D7"; // multiplication sign (x)
+
+        hideBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (channelId) {
+            hideArtist(channelId, artistName);
+            item.style.display = "none";
+            item.dataset.yteHiddenArtist = "true";
+          }
+        });
+
+        item.appendChild(hideBtn);
+      }
+
+      // Apply visibility based on settings
+      const shouldHide = hideListenAgainArtists || (channelId && isArtistHidden(channelId));
+
+      if (shouldHide) {
+        if (item.style.display !== "none") {
+          item.style.display = "none";
+          item.dataset.yteHiddenArtist = "true";
+        }
+      } else {
+        if (item.dataset.yteHiddenArtist) {
+          item.style.display = "";
+          delete item.dataset.yteHiddenArtist;
+        }
+      }
+    }
+  }
+
+  function collectAllListenAgainArtists() {
+    // Scan homepage carousel
+    const carouselShelves = document.querySelectorAll("ytmusic-carousel-shelf-renderer");
+    for (const shelf of carouselShelves) {
+      const headerLink = shelf.querySelector(
+        'ytmusic-carousel-shelf-basic-header-renderer yt-formatted-string.title a[href="listen_again"]'
+      );
+      if (!headerLink) continue;
+      collectArtistsFromItems(shelf.querySelectorAll("ytmusic-two-row-item-renderer"));
+    }
+
+    // Scan /listen_again grid page
+    if (location.pathname === "/listen_again" || location.href.includes("listen_again")) {
+      const gridItems = document.querySelectorAll(
+        "ytmusic-grid-renderer ytmusic-two-row-item-renderer"
+      );
+      if (gridItems.length > 0) {
+        collectArtistsFromItems(gridItems);
+      }
+    }
+  }
+
+  function collectArtistsFromItems(items) {
+    let changed = false;
+    for (const item of items) {
+      if (!item.hasAttribute("has-circle-cropped-thumbnail")) continue;
+
+      const link = item.querySelector('a.image-wrapper[href*="channel/"]');
+      const href = link?.getAttribute("href") || "";
+      const channelMatch = href.match(/channel\/([A-Za-z0-9_-]+)/);
+      const channelId = channelMatch ? channelMatch[1] : null;
+      if (!channelId) continue;
+
+      const titleEl = item.querySelector(".details yt-formatted-string.title");
+      const artistName = titleEl?.textContent?.trim() || "";
+
+      if (!hiddenArtistKeys.includes(channelId)) {
+        hiddenArtistKeys.push(channelId);
+        changed = true;
+      }
+      if (artistName) {
+        hiddenArtistLabels[channelId] = artistName;
+      }
+    }
+    if (changed) {
+      saveHiddenArtists();
+      document.dispatchEvent(new CustomEvent("yt-enhancer:hidden-artists-change"));
+    }
+  }
+
+  function debloatHomepageSections() {
+    const shelves = document.querySelectorAll("ytmusic-carousel-shelf-renderer");
+    for (const shelf of shelves) {
+      const headerRenderer = shelf.querySelector("ytmusic-carousel-shelf-basic-header-renderer");
+      const titleEl = headerRenderer?.querySelector("yt-formatted-string.title");
+      if (!titleEl || !headerRenderer) continue;
+
+      const originalTitle = titleEl.textContent?.trim() || "";
+      const rawTitle = normalizeMenuText(originalTitle);
+
+      // Skip "Ouvir de novo" — it has its own artist hiding controls
+      const isListenAgain = titleEl.querySelector('a[href="listen_again"]');
+      if (isListenAgain) continue;
+
+      const straplineEl = headerRenderer.querySelector("yt-formatted-string.strapline");
+      const rawStrapline = normalizeMenuText(straplineEl?.textContent);
+
+      // Try to match a known section
+      let matchedId = null;
+
+      for (const section of HOMEPAGE_SECTIONS) {
+        const normalizedLabel = normalizeMenuText(section.label);
+        const textToMatch = section.matchStrapline ? rawStrapline : rawTitle;
+
+        if (textToMatch === normalizedLabel) {
+          matchedId = section.id;
+          break;
+        }
+      }
+
+      // Inject X button if not already present
+      if (!shelf.classList.contains("yt-enhancer-section-hide-ready")) {
+        const detailsDiv = headerRenderer.querySelector("#details");
+        if (!detailsDiv) continue;
+
+        shelf.classList.add("yt-enhancer-section-hide-ready");
+
+        const hideBtn = document.createElement("button");
+        hideBtn.type = "button";
+        hideBtn.className = "yt-enhancer-section-hide-btn";
+        hideBtn.setAttribute("aria-label", `Ocultar "${originalTitle}"`);
+        hideBtn.textContent = "\u00D7";
+
+        hideBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          if (matchedId) {
+            setHomepageSectionHidden(matchedId, true);
+          } else if (rawTitle) {
+            hideDynamicSection(rawTitle, originalTitle);
+          }
+
+          shelf.style.display = "none";
+          shelf.dataset.yteHiddenSection = "true";
+        });
+
+        detailsDiv.appendChild(hideBtn);
+      }
+
+      // Apply visibility
+      const shouldHide = matchedId
+        ? isHomepageSectionHidden(matchedId)
+        : isDynamicSectionHidden(rawTitle);
+
+      if (shouldHide) {
+        if (shelf.style.display !== "none") {
+          shelf.style.display = "none";
+          shelf.dataset.yteHiddenSection = "true";
+        }
+      } else {
+        if (shelf.dataset.yteHiddenSection) {
+          shelf.style.display = "";
+          delete shelf.dataset.yteHiddenSection;
+        }
+      }
+    }
+  }
+
   function showStartupToast() {
     const host = document.body || document.documentElement;
     if (!host) return;
@@ -2215,83 +2590,134 @@
     const root = document.createElement("div");
     root.className = "yt-enhancer-settings-root";
     root.innerHTML = `
-      <button type="button" class="yt-enhancer-settings-toggle" aria-label="Abrir configuracoes do YT-Enhancer" aria-expanded="false">⚙</button>
-      <section class="yt-enhancer-settings-panel" role="dialog" aria-label="Configuracoes do YT-Enhancer">
-        <button type="button" class="yt-enhancer-settings-close" aria-label="Fechar">×</button>
-        <strong class="yt-enhancer-settings-title">${SCRIPT_NAME}</strong>
-        <span class="yt-enhancer-settings-meta">${versionText} • ${storageText}</span>
-        <label class="yt-enhancer-settings-label" for="yt-enhancer-pin-mode-select">Visibilidade do alfinete</label>
-        <select id="yt-enhancer-pin-mode-select" class="yt-enhancer-settings-select">
-          <option value="always">Sempre visivel (always)</option>
-          <option value="dynamic">Dinamico (dynamic)</option>
-          <option value="hover-only">Apenas no hover (hover-only)</option>
-        </select>
-        <p class="yt-enhancer-settings-help"></p>
-        <div class="yt-enhancer-settings-divider"></div>
-        <label class="yt-enhancer-settings-switch-control">
-          <span>Abrir sempre em playlists</span>
-          <span class="yt-enhancer-switch">
-            <input id="yt-enhancer-library-redirect" type="checkbox" class="yt-enhancer-switch-input" />
-            <span class="yt-enhancer-switch-track"></span>
-          </span>
-        </label>
-        <div class="yt-enhancer-settings-divider"></div>
-        <label class="yt-enhancer-settings-label">Aparencia</label>
-        <div class="yt-enhancer-settings-presets">
-          <button type="button" class="yt-enhancer-settings-preset" data-preset="yt-red">YT Red</button>
-          <button type="button" class="yt-enhancer-settings-preset" data-preset="blue-neon">Blue Neon</button>
-          <button type="button" class="yt-enhancer-settings-preset" data-preset="monochrome">Monochrome</button>
-          <button type="button" class="yt-enhancer-settings-preset" data-preset="catppuccin">Catppuccin</button>
-        </div>
-        <div class="yt-enhancer-settings-catppuccin" hidden>
-          <label class="yt-enhancer-settings-label" for="yt-enhancer-catppuccin-variant">Variante Catppuccin</label>
-          <select id="yt-enhancer-catppuccin-variant" class="yt-enhancer-settings-select">
-            <option value="latte">Latte</option>
-            <option value="frappe">Frappe</option>
-            <option value="macchiato">Macchiato</option>
-            <option value="mocha">Mocha</option>
-          </select>
-        </div>
-        <div class="yt-enhancer-settings-colors">
-          <label class="yt-enhancer-settings-color-control" for="yt-enhancer-popup-accent-color">
-            <span class="yt-enhancer-settings-color-label">Destaque do menu <span class="yt-enhancer-settings-hint" data-tip="Define a cor de destaque do menu (borda, botoes e elementos ativos)." title="Define a cor de destaque do menu (borda, botoes e elementos ativos).">?</span></span>
-            <input id="yt-enhancer-popup-accent-color" type="color" class="yt-enhancer-settings-color-input" />
-          </label>
-          <label class="yt-enhancer-settings-color-control" for="yt-enhancer-popup-background-color">
-            <span class="yt-enhancer-settings-color-label">Fundo do menu <span class="yt-enhancer-settings-hint" data-tip="Define a cor base do menu (fundo principal e variacoes do painel)." title="Define a cor base do menu (fundo principal e variacoes do painel).">?</span></span>
-            <input id="yt-enhancer-popup-background-color" type="color" class="yt-enhancer-settings-color-input" />
-          </label>
-          <label class="yt-enhancer-settings-color-control" for="yt-enhancer-pin-color">
-            <span>Cor do alfinete</span>
-            <input id="yt-enhancer-pin-color" type="color" class="yt-enhancer-settings-color-input" />
-          </label>
-          <label class="yt-enhancer-settings-color-control" for="yt-enhancer-pin-pinned-color">
-            <span>Cor do alfinete fixado</span>
-            <input id="yt-enhancer-pin-pinned-color" type="color" class="yt-enhancer-settings-color-input" />
-          </label>
-        </div>
-        <button type="button" class="yt-enhancer-settings-reset-theme">Resetar cores</button>
-        <div class="yt-enhancer-settings-divider"></div>
-        <label class="yt-enhancer-settings-label">Playlists ocultas</label>
-        <div class="yt-enhancer-settings-hidden-section">
-          <button type="button" class="yt-enhancer-settings-hidden-toggle">
-            <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
-            <span class="yt-enhancer-settings-hidden-summary"></span>
-          </button>
-          <div class="yt-enhancer-settings-hidden-collapsible" hidden>
-            <div class="yt-enhancer-settings-hidden-list"></div>
-            <button type="button" class="yt-enhancer-settings-unhide-all">Reexibir todas</button>
+      <button type="button" class="yt-enhancer-settings-toggle" aria-label="Abrir configuraçoes do YT-Enhancer" aria-expanded="false">⚙</button>
+      <div class="yt-enhancer-settings-backdrop"></div>
+      <section class="yt-enhancer-settings-modal" role="dialog" aria-label="configuraçoes do YT-Enhancer">
+        <header class="yt-enhancer-settings-header">
+          <div class="yt-enhancer-settings-header-info">
+            <strong class="yt-enhancer-settings-title">${SCRIPT_NAME}</strong>
+            <span class="yt-enhancer-settings-meta">${versionText} • ${storageText}</span>
           </div>
-        </div>
-        <div class="yt-enhancer-settings-divider"></div>
-        <label class="yt-enhancer-settings-label">Menu de contexto (debloat)</label>
-        <div class="yt-enhancer-settings-debloat-section">
-          <button type="button" class="yt-enhancer-settings-debloat-toggle">
-            <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
-            <span class="yt-enhancer-settings-debloat-summary"></span>
-          </button>
-          <div class="yt-enhancer-settings-debloat-collapsible" hidden>
-            <div class="yt-enhancer-settings-debloat-list"></div>
+          <button type="button" class="yt-enhancer-settings-close" aria-label="Fechar">×</button>
+        </header>
+        <div class="yt-enhancer-settings-body">
+          <div class="yt-enhancer-settings-section">
+            <label class="yt-enhancer-settings-label" for="yt-enhancer-pin-mode-select">Visibilidade do alfinete</label>
+            <select id="yt-enhancer-pin-mode-select" class="yt-enhancer-settings-select">
+              <option value="always">Sempre visivel (always)</option>
+              <option value="dynamic">Dinamico (dynamic)</option>
+              <option value="hover-only">Apenas no hover (hover-only)</option>
+            </select>
+            <p class="yt-enhancer-settings-help"></p>
+          </div>
+          <div class="yt-enhancer-settings-section">
+            <label class="yt-enhancer-settings-switch-control">
+              <span>Abrir sempre em playlists</span>
+              <span class="yt-enhancer-switch">
+                <input id="yt-enhancer-library-redirect" type="checkbox" class="yt-enhancer-switch-input" />
+                <span class="yt-enhancer-switch-track"></span>
+              </span>
+            </label>
+          </div>
+          <div class="yt-enhancer-settings-section">
+            <label class="yt-enhancer-settings-label">Aparencia</label>
+            <div class="yt-enhancer-settings-presets">
+              <button type="button" class="yt-enhancer-settings-preset" data-preset="yt-red">YT Red</button>
+              <button type="button" class="yt-enhancer-settings-preset" data-preset="blue-neon">Blue Neon</button>
+              <button type="button" class="yt-enhancer-settings-preset" data-preset="monochrome">Monochrome</button>
+              <button type="button" class="yt-enhancer-settings-preset" data-preset="catppuccin">Catppuccin</button>
+            </div>
+            <div class="yt-enhancer-settings-catppuccin" hidden>
+              <label class="yt-enhancer-settings-label" for="yt-enhancer-catppuccin-variant">Variante Catppuccin</label>
+              <select id="yt-enhancer-catppuccin-variant" class="yt-enhancer-settings-select">
+                <option value="latte">Latte</option>
+                <option value="frappe">Frappe</option>
+                <option value="macchiato">Macchiato</option>
+                <option value="mocha">Mocha</option>
+              </select>
+            </div>
+            <div class="yt-enhancer-settings-colors">
+              <label class="yt-enhancer-settings-color-control" for="yt-enhancer-popup-accent-color">
+                <span class="yt-enhancer-settings-color-label">Destaque do menu <span class="yt-enhancer-settings-hint" data-tip="Define a cor de destaque do menu (borda, botoes e elementos ativos)." title="Define a cor de destaque do menu (borda, botoes e elementos ativos).">?</span></span>
+                <input id="yt-enhancer-popup-accent-color" type="color" class="yt-enhancer-settings-color-input" />
+              </label>
+              <label class="yt-enhancer-settings-color-control" for="yt-enhancer-popup-background-color">
+                <span class="yt-enhancer-settings-color-label">Fundo do menu <span class="yt-enhancer-settings-hint" data-tip="Define a cor base do menu (fundo principal e variacoes do painel)." title="Define a cor base do menu (fundo principal e variacoes do painel).">?</span></span>
+                <input id="yt-enhancer-popup-background-color" type="color" class="yt-enhancer-settings-color-input" />
+              </label>
+              <label class="yt-enhancer-settings-color-control" for="yt-enhancer-pin-color">
+                <span>Cor do alfinete</span>
+                <input id="yt-enhancer-pin-color" type="color" class="yt-enhancer-settings-color-input" />
+              </label>
+              <label class="yt-enhancer-settings-color-control" for="yt-enhancer-pin-pinned-color">
+                <span>Cor do alfinete fixado</span>
+                <input id="yt-enhancer-pin-pinned-color" type="color" class="yt-enhancer-settings-color-input" />
+              </label>
+            </div>
+            <button type="button" class="yt-enhancer-settings-reset-theme">Resetar cores</button>
+          </div>
+          <div class="yt-enhancer-settings-section">
+            <label class="yt-enhancer-settings-label">Debloat</label>
+            <label class="yt-enhancer-settings-switch-control">
+              <span>Remover botao Upgrade</span>
+              <span class="yt-enhancer-switch">
+                <input id="yt-enhancer-hide-upgrade" type="checkbox" class="yt-enhancer-switch-input" />
+                <span class="yt-enhancer-switch-track"></span>
+              </span>
+            </label>
+            <div class="yt-enhancer-settings-debloat-section">
+              <button type="button" class="yt-enhancer-settings-debloat-toggle">
+                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
+                <span class="yt-enhancer-settings-debloat-summary"></span>
+              </button>
+              <div class="yt-enhancer-settings-debloat-collapsible" hidden>
+                <div class="yt-enhancer-settings-debloat-list"></div>
+              </div>
+            </div>
+            <div class="yt-enhancer-settings-hidden-section">
+              <button type="button" class="yt-enhancer-settings-hidden-toggle">
+                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
+                <span class="yt-enhancer-settings-hidden-summary"></span>
+              </button>
+              <div class="yt-enhancer-settings-hidden-collapsible" hidden>
+                <div class="yt-enhancer-settings-hidden-list"></div>
+                <button type="button" class="yt-enhancer-settings-unhide-all">Reexibir todas</button>
+              </div>
+            </div>
+            <label class="yt-enhancer-settings-sub-label">Homepage</label>
+            <label class="yt-enhancer-settings-switch-control">
+              <span>Ocultar todos os artistas em "Ouvir de novo"</span>
+              <span class="yt-enhancer-switch">
+                <input id="yt-enhancer-hide-listen-again-artists" type="checkbox" class="yt-enhancer-switch-input" />
+                <span class="yt-enhancer-switch-track"></span>
+              </span>
+            </label>
+            <div class="yt-enhancer-settings-hidden-artists-section">
+              <button type="button" class="yt-enhancer-settings-hidden-artists-toggle">
+                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
+                <span class="yt-enhancer-settings-hidden-artists-summary"></span>
+              </button>
+              <div class="yt-enhancer-settings-hidden-artists-collapsible" hidden>
+                <div class="yt-enhancer-settings-hidden-artists-list"></div>
+                <button type="button" class="yt-enhancer-settings-unhide-all-artists">Reexibir todos</button>
+              </div>
+            </div>
+            <div class="yt-enhancer-settings-sections-debloat-section">
+              <button type="button" class="yt-enhancer-settings-sections-debloat-toggle">
+                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
+                <span class="yt-enhancer-settings-sections-debloat-summary"></span>
+              </button>
+              <div class="yt-enhancer-settings-sections-debloat-collapsible" hidden>
+                <label class="yt-enhancer-settings-switch-control">
+                  <span>Ocultar todas as seções</span>
+                  <span class="yt-enhancer-switch">
+                    <input id="yt-enhancer-hide-all-sections" type="checkbox" class="yt-enhancer-switch-input" />
+                    <span class="yt-enhancer-switch-track"></span>
+                  </span>
+                </label>
+                <div class="yt-enhancer-settings-sections-debloat-list"></div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -2301,7 +2727,8 @@
 
     const toggleButton = root.querySelector(".yt-enhancer-settings-toggle");
     const closeButton = root.querySelector(".yt-enhancer-settings-close");
-    const panel = root.querySelector(".yt-enhancer-settings-panel");
+    const backdrop = root.querySelector(".yt-enhancer-settings-backdrop");
+    const modal = root.querySelector(".yt-enhancer-settings-modal");
     const modeSelect = root.querySelector(".yt-enhancer-settings-select");
     const modeHelp = root.querySelector(".yt-enhancer-settings-help");
     const presetButtons = Array.from(
@@ -2332,11 +2759,26 @@
     const debloatCollapsible = root.querySelector(".yt-enhancer-settings-debloat-collapsible");
     const debloatSummary = root.querySelector(".yt-enhancer-settings-debloat-summary");
     const debloatList = root.querySelector(".yt-enhancer-settings-debloat-list");
+    const hideUpgradeCheckbox = root.querySelector("#yt-enhancer-hide-upgrade");
+    const hideListenAgainArtistsCheckbox = root.querySelector("#yt-enhancer-hide-listen-again-artists");
+    const hiddenArtistsToggleButton = root.querySelector(".yt-enhancer-settings-hidden-artists-toggle");
+    const hiddenArtistsToggleArrow = hiddenArtistsToggleButton?.querySelector(".yt-enhancer-settings-hidden-toggle-arrow");
+    const hiddenArtistsCollapsible = root.querySelector(".yt-enhancer-settings-hidden-artists-collapsible");
+    const hiddenArtistsSummary = root.querySelector(".yt-enhancer-settings-hidden-artists-summary");
+    const hiddenArtistsList = root.querySelector(".yt-enhancer-settings-hidden-artists-list");
+    const unhideAllArtistsButton = root.querySelector(".yt-enhancer-settings-unhide-all-artists");
+    const sectionsDebloatList = root.querySelector(".yt-enhancer-settings-sections-debloat-list");
+    const hideAllSectionsCheckbox = root.querySelector("#yt-enhancer-hide-all-sections");
+    const sectionsDebloatToggleButton = root.querySelector(".yt-enhancer-settings-sections-debloat-toggle");
+    const sectionsDebloatToggleArrow = sectionsDebloatToggleButton?.querySelector(".yt-enhancer-settings-hidden-toggle-arrow");
+    const sectionsDebloatCollapsible = root.querySelector(".yt-enhancer-settings-sections-debloat-collapsible");
+    const sectionsDebloatSummary = root.querySelector(".yt-enhancer-settings-sections-debloat-summary");
 
     if (
       !toggleButton ||
       !closeButton ||
-      !panel ||
+      !backdrop ||
+      !modal ||
       !modeSelect ||
       !modeHelp ||
       !catppuccinVariantsWrap ||
@@ -2358,6 +2800,20 @@
       !debloatCollapsible ||
       !debloatSummary ||
       !debloatList ||
+      !hideUpgradeCheckbox ||
+      !hideListenAgainArtistsCheckbox ||
+      !hiddenArtistsToggleButton ||
+      !hiddenArtistsToggleArrow ||
+      !hiddenArtistsCollapsible ||
+      !hiddenArtistsSummary ||
+      !hiddenArtistsList ||
+      !unhideAllArtistsButton ||
+      !sectionsDebloatList ||
+      !hideAllSectionsCheckbox ||
+      !sectionsDebloatToggleButton ||
+      !sectionsDebloatToggleArrow ||
+      !sectionsDebloatCollapsible ||
+      !sectionsDebloatSummary ||
       presetButtons.length === 0
     ) {
       return;
@@ -2441,27 +2897,16 @@
       });
     }
 
-    const updateSettingsPanelDirection = () => {
-      const PANEL_GAP = 12;
-      const rootRect = root.getBoundingClientRect();
-      const panelHeight = panel.offsetHeight || panel.scrollHeight || 280;
-      const spaceAbove = rootRect.top - PANEL_GAP;
-      const spaceBelow = window.innerHeight - rootRect.bottom - PANEL_GAP;
-
-      const shouldOpenDown =
-        (spaceBelow >= panelHeight && spaceBelow >= PANEL_GAP) ||
-        spaceBelow > spaceAbove;
-
-      root.classList.toggle("open-down", shouldOpenDown);
-    };
-
     const setPanelOpen = (isOpen) => {
-      if (isOpen) {
-        updateSettingsPanelDirection();
-      }
-
       root.classList.toggle("is-open", isOpen);
       toggleButton.setAttribute("aria-expanded", String(isOpen));
+
+      if (isOpen) {
+        document.body.style.overflow = "hidden";
+        renderSectionsDebloatControls();
+      } else {
+        document.body.style.overflow = "";
+      }
     };
 
     const syncMode = (mode) => {
@@ -2495,8 +2940,8 @@
 
       hiddenSummary.textContent =
         hiddenGroups.length === 0
-          ? "Nenhuma playlist oculta."
-          : `${hiddenGroups.length} playlist${
+          ? "Playlists ocultas — nenhuma playlist oculta."
+          : `Playlists ocultas — ${hiddenGroups.length} playlist${
               hiddenGroups.length > 1 ? "s" : ""
             } oculta${hiddenGroups.length > 1 ? "s" : ""}.`;
 
@@ -2538,8 +2983,8 @@
 
       debloatSummary.textContent =
         hiddenCount === 0
-          ? `Todos os ${totalCount} itens visiveis.`
-          : `${hiddenCount} de ${totalCount} iten${hiddenCount > 1 ? "s" : ""} oculto${hiddenCount > 1 ? "s" : ""}.`;
+          ? `Menu de contexto — todos os ${totalCount} itens visiveis.`
+          : `Menu de contexto — ${hiddenCount} de ${totalCount} iten${hiddenCount > 1 ? "s" : ""} oculto${hiddenCount > 1 ? "s" : ""}.`;
 
       debloatList.innerHTML = "";
 
@@ -2579,6 +3024,149 @@
       });
     };
 
+    const renderHiddenArtistControls = () => {
+      const hiddenArtists = getHiddenArtistList();
+
+      hiddenArtistsSummary.textContent =
+        hiddenArtists.length === 0
+          ? "Nenhum artista oculto."
+          : `${hiddenArtists.length} artista${hiddenArtists.length > 1 ? "s" : ""} oculto${hiddenArtists.length > 1 ? "s" : ""}.`;
+
+      hiddenArtistsList.innerHTML = "";
+
+      hiddenArtists.forEach((artist) => {
+        const itemButton = document.createElement("button");
+        itemButton.type = "button";
+        itemButton.className = "yt-enhancer-settings-hidden-item";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "yt-enhancer-settings-hidden-name";
+        nameSpan.textContent = artist.label;
+
+        const actionSpan = document.createElement("span");
+        actionSpan.className = "yt-enhancer-settings-hidden-action";
+        actionSpan.textContent = "Reexibir";
+
+        itemButton.appendChild(nameSpan);
+        itemButton.appendChild(actionSpan);
+
+        itemButton.addEventListener("click", () => {
+          unhideArtist(artist.channelId);
+          debloatListenAgainArtists();
+          renderHiddenArtistControls();
+        });
+
+        hiddenArtistsList.appendChild(itemButton);
+      });
+
+      hiddenArtistsList.hidden = hiddenArtists.length === 0;
+      unhideAllArtistsButton.disabled = hiddenArtists.length === 0;
+    };
+
+    const updateSectionsDebloatSummary = () => {
+      const knownHidden = hiddenHomepageSections.length;
+      const dynamicHidden = hiddenDynamicSections.length;
+      const totalKnown = HOMEPAGE_SECTIONS.length;
+      const allKnownHidden = knownHidden === totalKnown;
+      hideAllSectionsCheckbox.checked = allKnownHidden;
+
+      if (knownHidden === 0 && dynamicHidden === 0) {
+        sectionsDebloatSummary.textContent =
+          `Ocultar seções — todas as ${totalKnown} seções visíveis.`;
+      } else if (dynamicHidden === 0) {
+        sectionsDebloatSummary.textContent =
+          `Ocultar seções — ${knownHidden} de ${totalKnown} oculta${knownHidden > 1 ? "s" : ""}.`;
+      } else if (knownHidden === 0) {
+        sectionsDebloatSummary.textContent =
+          `Ocultar seções — ${dynamicHidden} personalizada${dynamicHidden > 1 ? "s" : ""} oculta${dynamicHidden > 1 ? "s" : ""}.`;
+      } else {
+        sectionsDebloatSummary.textContent =
+          `Ocultar seções — ${knownHidden} de ${totalKnown} + ${dynamicHidden} personalizada${dynamicHidden > 1 ? "s" : ""} oculta${knownHidden + dynamicHidden > 1 ? "s" : ""}.`;
+      }
+    };
+
+    const renderSectionsDebloatControls = () => {
+      sectionsDebloatList.innerHTML = "";
+      updateSectionsDebloatSummary();
+
+      HOMEPAGE_SECTIONS.forEach((section) => {
+        const isHidden = isHomepageSectionHidden(section.id);
+
+        const row = document.createElement("label");
+        row.className = "yt-enhancer-settings-switch-control";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = `Ocultar "${section.label}"`;
+
+        if (section.hint) {
+          const hintSpan = document.createElement("span");
+          hintSpan.className = "yt-enhancer-settings-hint";
+          hintSpan.textContent = "?";
+          hintSpan.setAttribute("data-tip", section.hint);
+          hintSpan.setAttribute("title", section.hint);
+          nameSpan.appendChild(document.createTextNode(" "));
+          nameSpan.appendChild(hintSpan);
+        }
+
+        const switchWrap = document.createElement("span");
+        switchWrap.className = "yt-enhancer-switch";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "yt-enhancer-switch-input";
+        input.checked = isHidden;
+
+        const track = document.createElement("span");
+        track.className = "yt-enhancer-switch-track";
+
+        input.addEventListener("change", () => {
+          setHomepageSectionHidden(section.id, input.checked);
+          debloatHomepageSections();
+          updateSectionsDebloatSummary();
+        });
+
+        switchWrap.appendChild(input);
+        switchWrap.appendChild(track);
+
+        row.appendChild(nameSpan);
+        row.appendChild(switchWrap);
+        sectionsDebloatList.appendChild(row);
+      });
+
+      // Render dynamic (personalized) sections
+      if (hiddenDynamicSections.length > 0) {
+        const dynamicLabel = document.createElement("span");
+        dynamicLabel.className = "yt-enhancer-settings-dynamic-label";
+        dynamicLabel.textContent = "Seções personalizadas ocultas";
+        sectionsDebloatList.appendChild(dynamicLabel);
+
+        hiddenDynamicSections.forEach((entry) => {
+          const itemButton = document.createElement("button");
+          itemButton.type = "button";
+          itemButton.className = "yt-enhancer-settings-hidden-item";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "yt-enhancer-settings-hidden-name";
+          nameSpan.textContent = entry.displayTitle;
+
+          const actionSpan = document.createElement("span");
+          actionSpan.className = "yt-enhancer-settings-hidden-action";
+          actionSpan.textContent = "Reexibir";
+
+          itemButton.appendChild(nameSpan);
+          itemButton.appendChild(actionSpan);
+
+          itemButton.addEventListener("click", () => {
+            unhideDynamicSection(entry.title);
+            debloatHomepageSections();
+            renderSectionsDebloatControls();
+          });
+
+          sectionsDebloatList.appendChild(itemButton);
+        });
+      }
+    };
+
     const applyThemeFromInputs = (persist) => {
       const appliedTheme = applySettingsTheme(
         {
@@ -2597,9 +3185,43 @@
     renderHiddenPlaylistControls();
     renderDebloatControls();
     libraryRedirectCheckbox.checked = Boolean(libraryRedirectToPlaylists);
+    hideUpgradeCheckbox.checked = Boolean(hideUpgradeButton);
+    hideListenAgainArtistsCheckbox.checked = Boolean(hideListenAgainArtists);
+    renderHiddenArtistControls();
+    renderSectionsDebloatControls();
 
     libraryRedirectCheckbox.addEventListener("change", () => {
       setLibraryRedirect(libraryRedirectCheckbox.checked);
+    });
+
+    hideUpgradeCheckbox.addEventListener("change", () => {
+      setHideUpgradeButton(hideUpgradeCheckbox.checked);
+      debloatUpgradeButton();
+    });
+
+    hideListenAgainArtistsCheckbox.addEventListener("change", () => {
+      setHideListenAgainArtists(hideListenAgainArtistsCheckbox.checked);
+      if (hideListenAgainArtistsCheckbox.checked) {
+        collectAllListenAgainArtists();
+      } else {
+        unhideAllArtists();
+        renderHiddenArtistControls();
+      }
+      debloatListenAgainArtists();
+    });
+
+    hideAllSectionsCheckbox.addEventListener("change", () => {
+      const shouldHide = hideAllSectionsCheckbox.checked;
+      const inputs = sectionsDebloatList.querySelectorAll(".yt-enhancer-switch-input");
+
+      inputs.forEach((input, index) => {
+        setTimeout(() => {
+          if (input.checked !== shouldHide) {
+            input.checked = shouldHide;
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        }, index * 60);
+      });
     });
 
     toggleButton.addEventListener("click", (event) => {
@@ -2751,10 +3373,26 @@
       debloatToggleArrow.classList.toggle("is-open", !isOpen);
     });
 
-    document.addEventListener("click", (event) => {
-      if (root.classList.contains("is-open") && !root.contains(event.target)) {
-        setPanelOpen(false);
-      }
+    hiddenArtistsToggleButton.addEventListener("click", () => {
+      const isOpen = !hiddenArtistsCollapsible.hidden;
+      hiddenArtistsCollapsible.hidden = isOpen;
+      hiddenArtistsToggleArrow.classList.toggle("is-open", !isOpen);
+    });
+
+    sectionsDebloatToggleButton.addEventListener("click", () => {
+      const isOpen = !sectionsDebloatCollapsible.hidden;
+      sectionsDebloatCollapsible.hidden = isOpen;
+      sectionsDebloatToggleArrow.classList.toggle("is-open", !isOpen);
+    });
+
+    unhideAllArtistsButton.addEventListener("click", () => {
+      unhideAllArtists();
+      debloatListenAgainArtists();
+      renderHiddenArtistControls();
+    });
+
+    backdrop.addEventListener("click", () => {
+      setPanelOpen(false);
     });
 
     document.addEventListener("keydown", (event) => {
@@ -2775,11 +3413,11 @@
       renderHiddenPlaylistControls();
     });
 
-    window.addEventListener("resize", () => {
-      if (root.classList.contains("is-open")) {
-        updateSettingsPanelDirection();
-      }
+    document.addEventListener("yt-enhancer:hidden-artists-change", () => {
+      renderHiddenArtistControls();
+    });
 
+    window.addEventListener("resize", () => {
       if (!root.classList.contains("is-custom-position")) return;
 
       const rect = root.getBoundingClientRect();
@@ -3178,12 +3816,33 @@
         color: #fff;
         border-color: var(--yte-popup-toggle-border);
       }
-      .yt-enhancer-settings-panel {
-        position: absolute;
-        right: 0;
-        bottom: 60px;
-        width: min(320px, calc(100vw - 28px));
-        border-radius: 14px;
+
+      /* Backdrop overlay */
+      .yt-enhancer-settings-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 10004;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(4px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+      }
+      .yt-enhancer-settings-root.is-open .yt-enhancer-settings-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      /* Modal */
+      .yt-enhancer-settings-modal {
+        position: fixed;
+        z-index: 10005;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.96);
+        width: min(480px, calc(100vw - 32px));
+        max-height: min(640px, calc(100vh - 48px));
+        border-radius: 16px;
         border: 1px solid var(--yte-popup-accent-border);
         background:
           radial-gradient(circle at top right, var(--yte-popup-accent-soft), transparent 58%),
@@ -3194,57 +3853,100 @@
             var(--yte-popup-bg-bottom)
           );
         box-shadow:
-          0 16px 30px rgba(0, 0, 0, 0.48),
+          0 24px 48px rgba(0, 0, 0, 0.55),
+          0 8px 24px rgba(0, 0, 0, 0.35),
           inset 0 1px 0 rgba(255, 255, 255, 0.06);
-        padding: 12px;
+        color: var(--yte-popup-text);
+        display: flex;
+        flex-direction: column;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease, transform 0.22s ease;
+      }
+      .yt-enhancer-settings-root.is-open .yt-enhancer-settings-modal {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      /* Header */
+      .yt-enhancer-settings-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px 12px;
+        border-bottom: 1px solid var(--yte-popup-accent-border);
+        flex-shrink: 0;
+      }
+      .yt-enhancer-settings-header-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      /* Scrollable body */
+      .yt-enhancer-settings-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 16px 20px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .yt-enhancer-settings-body::-webkit-scrollbar {
+        width: 6px;
+      }
+      .yt-enhancer-settings-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .yt-enhancer-settings-body::-webkit-scrollbar-thumb {
+        background: var(--yte-popup-select-border);
+        border-radius: 3px;
+      }
+      .yt-enhancer-settings-body::-webkit-scrollbar-thumb:hover {
+        background: var(--yte-popup-label);
+      }
+
+      /* Sections */
+      .yt-enhancer-settings-section {
         display: flex;
         flex-direction: column;
         gap: 8px;
-        color: var(--yte-popup-text);
-        opacity: 0;
-        pointer-events: none;
-        transform: translateY(8px) scale(0.98);
-        transform-origin: bottom right;
-        transition: opacity 0.18s ease, transform 0.18s ease;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--yte-popup-accent-border);
       }
-      .yt-enhancer-settings-root.open-down .yt-enhancer-settings-panel {
-        top: 60px;
-        bottom: auto;
-        transform: translateY(-8px) scale(0.98);
-        transform-origin: top right;
-      }
-      .yt-enhancer-settings-root.is-open .yt-enhancer-settings-panel {
-        opacity: 1;
-        pointer-events: auto;
-        transform: translateY(0) scale(1);
+      .yt-enhancer-settings-section:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
       }
       .yt-enhancer-settings-close {
-        position: absolute;
-        top: 6px;
-        right: 7px;
-        width: 24px;
-        height: 24px;
-        border: none;
-        border-radius: 6px;
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--yte-popup-select-border);
+        border-radius: 8px;
         background: transparent;
         color: var(--yte-popup-close-color);
-        font-size: 18px;
+        font-size: 20px;
         line-height: 1;
         cursor: pointer;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.15s ease, background 0.15s ease;
       }
       .yt-enhancer-settings-close:hover {
         color: #fff;
         background: var(--yte-popup-close-hover-bg);
       }
       .yt-enhancer-settings-title {
-        font-size: 13px;
+        font-size: 14px;
         letter-spacing: 0.2px;
         color: var(--yte-popup-label);
       }
       .yt-enhancer-settings-meta {
         font-size: 11px;
         color: var(--yte-popup-muted);
-        margin-right: 24px;
       }
       .yt-enhancer-settings-label {
         font-size: 11px;
@@ -3267,11 +3969,6 @@
         font-size: 11px;
         line-height: 1.35;
         color: var(--yte-popup-muted);
-      }
-      .yt-enhancer-settings-divider {
-        height: 1px;
-        background: var(--yte-popup-accent-border);
-        margin: 2px 0;
       }
       .yt-enhancer-settings-switch-control {
         display: flex;
@@ -3626,6 +4323,210 @@
         white-space: nowrap;
       }
 
+      /* === Sub-label for Homepage section === */
+      .yt-enhancer-settings-sub-label {
+        display: block;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--yte-popup-label);
+        margin-top: 10px;
+        margin-bottom: 2px;
+      }
+
+      /* === Hidden artists section (mirrors hidden playlists) === */
+      .yt-enhancer-settings-hidden-artists-section {
+        margin-top: 4px;
+      }
+      .yt-enhancer-settings-hidden-artists-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        background: none;
+        border: none;
+        color: var(--yte-popup-text);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 0;
+        text-align: left;
+      }
+      .yt-enhancer-settings-hidden-artists-toggle:hover {
+        color: var(--yte-popup-label);
+      }
+      .yt-enhancer-settings-hidden-artists-collapsible {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 4px;
+      }
+      .yt-enhancer-settings-hidden-artists-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 160px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .yt-enhancer-settings-hidden-artists-list::-webkit-scrollbar {
+        width: 5px;
+      }
+      .yt-enhancer-settings-hidden-artists-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .yt-enhancer-settings-hidden-artists-list::-webkit-scrollbar-thumb {
+        background: var(--yte-popup-accent-border);
+        border-radius: 4px;
+      }
+      .yt-enhancer-settings-hidden-artists-list::-webkit-scrollbar-thumb:hover {
+        background: var(--yte-popup-accent);
+      }
+      .yt-enhancer-settings-unhide-all-artists {
+        align-self: flex-start;
+        font-size: 11px;
+        color: var(--yte-popup-accent);
+        background: none;
+        border: 1px solid var(--yte-popup-accent-border);
+        border-radius: 4px;
+        padding: 3px 10px;
+        cursor: pointer;
+        transition: background 0.18s ease, color 0.18s ease;
+        margin-top: 4px;
+      }
+      .yt-enhancer-settings-unhide-all-artists:hover:not(:disabled) {
+        background: var(--yte-popup-accent);
+        color: #fff;
+      }
+      .yt-enhancer-settings-unhide-all-artists:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      /* === Artist hide button on carousel items === */
+      .yt-enhancer-artist-hide-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        z-index: 10;
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.7);
+        color: #fff;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transform: scale(0.8);
+        transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease;
+        pointer-events: none;
+      }
+      ytmusic-two-row-item-renderer.yt-enhancer-artist-hide-ready:hover .yt-enhancer-artist-hide-btn {
+        opacity: 1;
+        transform: scale(1);
+        pointer-events: auto;
+      }
+      .yt-enhancer-artist-hide-btn:hover {
+        background: rgba(220, 30, 60, 0.9);
+      }
+
+      /* === Sections debloat collapsible (matches Menu de contexto style) === */
+      .yt-enhancer-settings-sections-debloat-section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .yt-enhancer-settings-sections-debloat-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: none;
+        border: none;
+        color: var(--yte-popup-muted);
+        font-size: 11px;
+        cursor: pointer;
+        padding: 2px 0;
+        text-align: left;
+      }
+      .yt-enhancer-settings-sections-debloat-toggle:hover {
+        color: var(--yte-popup-text);
+      }
+      .yt-enhancer-settings-sections-debloat-summary {
+        font-size: 11px;
+        color: var(--yte-popup-muted);
+      }
+      .yt-enhancer-settings-sections-debloat-collapsible {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .yt-enhancer-settings-sections-debloat-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 220px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .yt-enhancer-settings-sections-debloat-list::-webkit-scrollbar {
+        width: 5px;
+      }
+      .yt-enhancer-settings-sections-debloat-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .yt-enhancer-settings-sections-debloat-list::-webkit-scrollbar-thumb {
+        background: var(--yte-popup-accent-border);
+        border-radius: 4px;
+      }
+      .yt-enhancer-settings-sections-debloat-list::-webkit-scrollbar-thumb:hover {
+        background: var(--yte-popup-accent);
+      }
+      .yt-enhancer-settings-dynamic-label {
+        display: block;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        color: var(--yte-popup-label);
+        margin-top: 8px;
+        margin-bottom: 2px;
+      }
+
+      /* === Section hide button on carousel headers === */
+      .yt-enhancer-section-hide-btn {
+        flex-shrink: 0;
+        margin-left: 8px;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.7);
+        color: #fff;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease;
+        pointer-events: none;
+        transform: scale(0.8);
+      }
+      ytmusic-carousel-shelf-basic-header-renderer:hover .yt-enhancer-section-hide-btn {
+        opacity: 1;
+        transform: scale(1);
+        pointer-events: auto;
+      }
+      .yt-enhancer-section-hide-btn:hover {
+        background: rgba(220, 30, 60, 0.9);
+      }
+
       .yt-enhancer-startup-toast {
         position: fixed;
         right: 18px;
@@ -3737,6 +4638,9 @@
       checkModal();
       checkNotifications();
       debloatContextMenu();
+      debloatUpgradeButton();
+      debloatListenAgainArtists();
+      debloatHomepageSections();
     }, 500);
   }
 
@@ -3751,6 +4655,9 @@
     checkModal();
     checkNotifications();
     debloatContextMenu();
+    debloatUpgradeButton();
+    debloatListenAgainArtists();
+    debloatHomepageSections();
 
     // Para o interval de inicialização quando tudo estiver pronto
     if (volumeReady && playlistsReady) {

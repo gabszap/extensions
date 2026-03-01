@@ -8,7 +8,7 @@
 // @grant       GM_xmlhttpRequest
 // @grant       GM_download
 // @connect     api.telegram.org
-// @version     2.7.0
+// @version     2.7.1
 // @author      gabszap
 // @description Adds an internal bookmark system and tags to X, replacing the Grok button.
 // ==/UserScript==
@@ -74,7 +74,7 @@
     };
 
     // Estado da galeria
-    let currentFilter = { tag: null, search: '', sort: 'newest_added' };
+    let currentFilter = { tags: [], search: '', sort: 'newest_added' };
     let viewMode = GM_getValue('x_bookmark_view_mode', 'grid');
     let selectedItems = new Set();
     let isListeningForShortcut = false; // Flag para evitar conflito ao definir novos atalhos
@@ -3434,6 +3434,7 @@
         closeBtn.onclick = () => {
             modal.style.display = 'none';
             document.body.style.overflow = '';
+            document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"], [id$="-overlay"]').forEach(el => el.remove());
         };
         header.appendChild(closeBtn);
         modal.appendChild(header);
@@ -3713,21 +3714,29 @@
             allChip.innerText = 'Todos';
             allChip.style = `
                 padding: 6px 16px; border-radius: 20px; border: none; cursor: pointer;
-                background: ${currentFilter.tag === null ? '#1d9bf0' : '#222'};
-                color: ${currentFilter.tag === null ? 'white' : '#888'};
+                background: ${currentFilter.tags.length === 0 ? '#1d9bf0' : '#222'};
+                color: ${currentFilter.tags.length === 0 ? 'white' : '#888'};
             `;
-            allChip.onclick = () => { currentFilter.tag = null; updateGalleryContent(); };
+            allChip.onclick = () => { currentFilter.tags = []; updateGalleryContent(); };
             tagFiltersEl.appendChild(allChip);
 
             allTags.forEach(tag => {
+                const isActive = currentFilter.tags.includes(tag);
                 const chip = document.createElement('button');
                 chip.innerText = tag;
                 chip.style = `
                     padding: 6px 16px; border-radius: 20px; border: none; cursor: pointer;
-                    background: ${currentFilter.tag === tag ? '#1d9bf0' : '#222'};
-                    color: ${currentFilter.tag === tag ? 'white' : '#888'};
+                    background: ${isActive ? '#1d9bf0' : '#222'};
+                    color: ${isActive ? 'white' : '#888'};
                 `;
-                chip.onclick = () => { currentFilter.tag = tag; updateGalleryContent(); };
+                chip.onclick = () => {
+                    if (isActive) {
+                        currentFilter.tags = currentFilter.tags.filter(t => t !== tag);
+                    } else {
+                        currentFilter.tags.push(tag);
+                    }
+                    updateGalleryContent();
+                };
                 tagFiltersEl.appendChild(chip);
             });
         }
@@ -3735,11 +3744,13 @@
         // Filter bookmarks
         let bookmarks = getBookmarks();
 
-        // Filtrar por tag
-        if (currentFilter.tag) {
-            bookmarks = bookmarks.filter(b => (b.tags || []).includes(currentFilter.tag));
-        }
-
+                // Filtrar por tags (bookmark deve ter pelo menos UMA das tags selecionadas - union)
+                if (currentFilter.tags.length > 0) {
+                    bookmarks = bookmarks.filter(b => {
+                        const bTags = b.tags || [];
+                        return currentFilter.tags.some(tag => bTags.includes(tag));
+                    });
+                }
         // Filtrar por busca (handle)
         if (currentFilter.search) {
             const search = currentFilter.search.toLowerCase().replace('@', '');
@@ -5382,6 +5393,37 @@
 
         // Sincronizar posição com o GrokDrawer
         function syncPosition() {
+            const path = window.location.pathname;
+            
+            if (path === '/messages/compose' || path === '/compose/post') {
+                fab.style.display = 'flex';
+                fab.style.opacity = '0.5';
+                fab.style.pointerEvents = 'none';
+            } else if (path.includes('/photo/')) {
+                fab.style.display = 'none';
+            } else {
+                const reserved = ['explore', 'messages', 'settings', 'search', 'logout', 'login', 'i', 'compose'];
+                const firstSegment = path.split('/')[1];
+                const isHome = path === '/home' || path === '/';
+                const isExplore = path.startsWith('/explore');
+                const isSettings = path.startsWith('/settings');
+                const isCommunities = path.startsWith('/communities') || path.startsWith('/i/communities');
+                const isNotifications = path === '/notifications';
+                const isBookmarks = path === '/i/bookmarks';
+                const isStudio = path === '/i/jf/creators/studio';
+                const isProfile = !reserved.includes(firstSegment) && /^\/[a-zA-Z0-9_]{1,15}(\/(with_replies|media|likes|highlights|articles|communities))?\/?$/.test(path);
+                const isStatus = !reserved.includes(firstSegment) && /^\/[a-zA-Z0-9_]{1,15}\/status\/\d+/.test(path);
+                const isLists = !reserved.includes(firstSegment) && /^\/[a-zA-Z0-9_]{1,15}\/lists/.test(path);
+
+                if (isHome || isExplore || isSettings || isCommunities || isNotifications || isBookmarks || isStudio || isProfile || isStatus || isLists) {
+                    fab.style.display = 'flex';
+                    fab.style.opacity = '1';
+                    fab.style.pointerEvents = 'auto';
+                } else {
+                    fab.style.display = 'none';
+                }
+            }
+
             const grokDrawer = document.querySelector('[data-testid="GrokDrawer"]');
             if (grokDrawer) {
                 const grokRect = grokDrawer.getBoundingClientRect();
@@ -5440,6 +5482,7 @@
             if (isGalleryOpen) {
                 gallery.style.display = 'none';
                 document.body.style.overflow = '';
+                document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"], [id$="-overlay"]').forEach(el => el.remove());
             } else {
                 createGalleryModal();
             }
@@ -5460,6 +5503,7 @@
                 e.preventDefault();
                 gallery.style.display = 'none';
                 document.body.style.overflow = '';
+                document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"], [id$="-overlay"]').forEach(el => el.remove());
                 return;
             }
             // Se nada está aberto, não faz nada

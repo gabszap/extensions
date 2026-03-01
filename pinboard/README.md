@@ -1,6 +1,6 @@
-# X Bookmark
+# Pinboard
 
-![Version](https://img.shields.io/badge/version-2.6.78-2ea44f)
+![Version](https://img.shields.io/badge/version-2.7.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 ![Type](https://img.shields.io/badge/type-userscript-1f6feb)
 ![Browsers](https://img.shields.io/badge/browsers-Chromium%20%7C%20Firefox-6f42c1)
@@ -16,7 +16,7 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 - [Installation](#installation)
 - [Usage](#usage)
 - [Gallery](#gallery)
-- [Cloud Backup (Catbox)](#cloud-backup-catbox)
+- [Cloud Backup (Telegram)](#cloud-backup-telegram)
 - [Settings](#settings)
 - [Storage](#storage)
 - [Project Structure](#project-structure)
@@ -39,7 +39,7 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 - **Sort**: newest/oldest added, newest/oldest posted, favorites first, most images.
 - **Tag filtering** with chip UI.
 - **Favorites**: star/unstar bookmarks, sort by favorites.
-- **Visual badges** on grid cards: Catbox backup, Twitter-only, partial backup, merged image, favorite, fallback warning.
+- **Visual badges** on grid cards: Telegram backup, Twitter-only, partial backup, merged image, favorite, fallback warning.
 
 ### Tag system
 
@@ -50,18 +50,18 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 
 ### Image handling
 
-- **Max quality**: always requests `name=4096x4096` with fallback chain (4096 -> large -> Catbox backup URL).
-- **Image merging**: stitches 2+ images from a post into one vertical image, uploads to Catbox.
+- **Max quality**: always requests `name=4096x4096` with fallback chain (4096 -> large -> Telegram backup URL).
+- **Image merging**: stitches 2+ images from a post into one vertical image, uploads to Telegram.
 - **Download**: individual, all from a bookmark, merged, or bulk from selection. Files named `@handle_postId_index.ext`.
-- **Edit links**: full CRUD for image URLs within a bookmark, with thumbnail previews and Catbox cleanup warnings.
+- **Edit links**: full CRUD for image URLs within a bookmark, with thumbnail previews.
 - **Lightbox extraction**: detects images from X's lightbox/swipe overlay when the article DOM doesn't contain them.
 
-### Cloud backup (Catbox)
+### Cloud backup (Telegram)
 
-- **Automatic or manual backup** of bookmark images to [Catbox.moe](https://catbox.moe/).
-- **Userhash configuration** with live validation (upload test + delete test).
-- **Album support** — auto-add uploads to a Catbox album.
-- **Anonymous upload mode** (no userhash required).
+- **Automatic or manual backup** of bookmark images via your own Telegram Bot.
+- **Telegram Bot Configuration**: Requires a Bot Token and a Chat ID.
+- **Document & Photo modes**: Images can be sent as Telegram Photos (may have compression) or Documents (100% untouched original file).
+- **Fallback URL Rendering**: When Twitter CDNs fail, the script intercepts `tg:` links to dynamically stream the image back from Telegram to the UI.
 - **Selective backup** via tag filters (only backup bookmarks matching specific tags).
 - **Periodic backup scan** — every 5 minutes, checks for bookmarks missing backups.
 
@@ -71,15 +71,7 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 - When bookmarking a post from that user, tags are automatically applied.
 - Username autocomplete from existing bookmarks.
 
-### Dead link checker
 
-- Scans all Catbox backup URLs to find dead/inaccessible links.
-- Generates a report with previews, post links, and status.
-- **Re-upload** dead links individually or in bulk.
-- **Binary re-encode fallback** — mutates 1 pixel to force a new hash when Catbox returns the same dead URL.
-- **Manual fix** — paste a replacement URL directly.
-- Remembers known dead file IDs to prevent reuse.
-- Report is persisted and viewable later from settings.
 
 ### Bulk actions
 
@@ -89,7 +81,7 @@ Floating action bar when items are selected:
 - Manage Tags
 - Favorite / Unfavorite
 - Download
-- Backup to Catbox
+- Backup to Telegram
 - Delete
 
 ### Keyboard shortcuts
@@ -113,13 +105,13 @@ Floating action bar when items are selected:
 
 Click the link below and your userscript manager will offer to install it:
 
-[**Install X Bookmark**](https://github.com/gabszap/extensions/raw/refs/heads/main/x-bookmark/x-bookmark.user.js)
+[**Install Pinboard**](https://github.com/gabszap/extensions/raw/refs/heads/main/pinboard/pinboard.user.js)
 
 ### Manual install
 
 1. Install a userscript manager.
 2. Open the manager dashboard and create a new script.
-3. Paste the contents of `x-bookmark.user.js`.
+3. Paste the contents of `pinboard.user.js`.
 4. Save, enable, and open `https://x.com/`.
 
 ## Usage
@@ -140,15 +132,43 @@ The gallery supports two layouts:
 
 Both views support multi-select for bulk operations.
 
-## Cloud Backup (Catbox)
+## Cloud Backup (Telegram)
 
-To enable cloud backup:
+To enable cloud backup to your own private Telegram conversation:
 
-1. Open the gallery (`Ctrl+B`) and click Settings.
-2. Expand the "Cloud Backup (Catbox)" section.
-3. Optionally enter your Catbox userhash (get one at [catbox.moe](https://catbox.moe/)) — anonymous uploads work without it.
-4. Toggle "Auto-backup" to automatically upload images when bookmarking.
-5. Optionally set tag filters to only backup specific bookmarks.
+### How to get your Bot Token
+1. Open Telegram and search for **@BotFather**.
+2. Send the command `/newbot` and follow the prompts to choose a name and username for your bot.
+3. Once created, BotFather will give you a **HTTP API Token** (e.g., `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`). Copy this token.
+
+### How to get your Chat ID
+1. Search for **@userinfobot** in Telegram and start a chat with it.
+2. Depending on where you want to receive your backups, do one of the following:
+   - **Directly from your Bot (Private DM):** Send any message to **@userinfobot** and copy the `Id` it replies with (this is YOUR personal account ID, usually a positive number).
+   - **Group:** Forward any message from your group to **@userinfobot** OR use the "Share Chat" feature with it. It will reply with the group's ID (which typically starts with `-100`). Don't forget to add your new bot to this group so it can send messages.
+3. **Crucial step** (for private bot DMs): Telegram bots cannot initiate conversations. You must search for your new bot in Telegram and send it a `/start` message first to authorize it to send you backups.
+
+### Configuring the Extension
+1. Open the Pinboard gallery (`Ctrl+B`) and click **Settings**.
+2. Expand the **Cloud Backup** section.
+3. Paste both your **Bot Token** and **Chat ID**.
+4. Test the bot connection using the migration tool or by bookmarking a new post.
+5. Choose between **Document** (lossless) or **Photo** (compressed) modes.
+6. Check the "Auto-backup" toggle to automatically upload images going forward.
+
+### Editing Images (Helper Bot Script)
+If an image fails to upload properly or is glitched, you can fix it natively via your Telegram Chat using the included `telegram_bot.js` server.
+
+1. Create a `.env` file in the project folder with your token:
+   ```env
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+   ```
+2. Run the bot server from the terminal:
+   ```bash
+   node telegram_bot.js
+   ```
+3. In your Telegram app, **reply** to the glitched message from your bot.
+4. Keep the original text empty, attach the **new, correct image**, and type `/edit` in the caption. The bot will instantly replace the media and preserve the original Twitter link text. You can also do `/edit New Caption` to overwrite the text.
 
 ## Settings
 
@@ -158,9 +178,9 @@ Accessible from the gallery modal. Collapsible sections:
 |---|---|
 | **Appearance** | Gallery title, show/hide user labels, show/hide overlays, list preview size (40-150px), grid photo height (150-500px) |
 | **Keyboard Shortcuts** | Configurable bindings for gallery, close, view toggle, settings. Reset to defaults. |
-| **Cloud Backup** | Auto-backup toggle, userhash input with validation, album short, tag filter for selective backup |
+| **Cloud Backup** | Auto-backup toggle, Telegram Bot Token/Chat ID, Document/Photo upload methods, tag filter for selective backup |
 | **Automation** | Auto-tag rules configuration |
-| **Developer** | Debug mode toggle, Check Catbox Links, View Last Report |
+| **Developer** | Debug mode toggle |
 
 ## Storage
 
@@ -172,29 +192,28 @@ All data is stored via `GM_setValue`/`GM_getValue` in the userscript manager.
 | `x_bookmark_tags` | `string[]` | Tag list with order |
 | `x_bookmark_settings` | `object` | All settings |
 | `x_bookmark_autotag_rules` | `object[]` | Auto-tag rules |
-| `x_bookmark_dead_links_report` | `object` | Last dead link scan report |
-| `x_bookmark_known_dead_file_ids` | `string[]` | Known dead Catbox file IDs |
+
 | `x_bookmark_view_mode` | `string` | `grid` / `list` preference |
 
 ## Project Structure
 
 ```
-x-bookmark/
-  x-bookmark.user.js   Main userscript (single file, no build step)
+pinboard/
+  pinboard.user.js   Main userscript (single file, no build step)
   README.md             This file
 ```
 
 ## Development Notes
 
-- No build step — edit `x-bookmark.user.js` directly.
-- Run `node -c x-bookmark.user.js` for syntax validation.
+- No build step — edit `pinboard.user.js` directly.
+- Run `node -c pinboard.user.js` for syntax validation.
 - Bump `@version` in the userscript header on each release.
-- The script uses `GM_xmlhttpRequest` for cross-origin requests to Catbox.moe.
+- The script uses `GM_xmlhttpRequest` for cross-origin API requests to Telegram.
 - Image quality URLs use X's `pbs.twimg.com` CDN with `name=4096x4096` parameter.
 
 ## Known Limitations
 
-- X frequently changes its DOM structure; selectors may need updates.
-- Bookmarks are stored locally per browser/profile — no cross-device sync (use Catbox backup for image preservation).
+- When X changes its DOM structure, selectors may need updates.
+- Bookmarks are stored locally per browser/profile — no cross-device sync (use Telegram backup for image preservation).
 - Large bookmark collections (1000+) may cause slower gallery rendering.
-- Catbox.moe has file size limits and may occasionally be unavailable.
+- Telegram imposes a 20MB limit for bot uploads via GM_xmlhttpRequest, though X images rarely exceed this.

@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name        X Bookmark
+// @name        Pinboard
 // @namespace   Violentmonkey Scripts
 // @match       https://x.com/*
 // @grant       GM_setValue
@@ -7,10 +7,10 @@
 // @grant       GM_registerMenuCommand
 // @grant       GM_xmlhttpRequest
 // @grant       GM_download
-// @connect     catbox.moe
-// @version     2.6.78
-// @author      Antigravity
-// @description Substitui o botão do Grok por um Bookmark interno
+// @connect     api.telegram.org
+// @version     2.7.0
+// @author      gabszap
+// @description Adds an internal bookmark system and tags to X, replacing the Grok button.
 // ==/UserScript==
 
 (function () {
@@ -18,8 +18,7 @@
 
     const STORAGE_KEY = 'x_internal_bookmarks';
     const TAGS_KEY = 'x_bookmark_tags';
-    const DEAD_REPORT_KEY = 'x_bookmark_dead_links_report';
-    const KNOWN_DEAD_FILE_IDS_KEY = 'x_bookmark_known_dead_file_ids';
+
     const BOOKMARK_ICON_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true" class="r-4qtqp9 r-yyyyoo r-dnmrzs r-bnwqim r-lrvibr r-m6rgpd r-1xvli5t r-1hdv0qi"><g><path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5zM6.5 4c-.276 0-.5.22-.5.5v14.56l6-4.29 6 4.29V4.5c0-.28-.224-.5-.5-.5h-11z"></path></g></svg>`;
     const ICON_TAG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>`;
     const ICON_TRASH = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
@@ -37,8 +36,9 @@
     const ICON_USER = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     const ICON_CLOUD = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`;
     const ICON_CLOUD_OFF = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 8 5.17"/></svg>`;
-    const ICON_CATBOX = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 135 169" fill="currentColor" style="vertical-align: middle;"><path d="M48 36.3c-14.2 7.2-27.5 15.2-30.1 18.3-1 1.3-.9 2.8.9 8.7 1.2 4 3.3 10.7 4.6 14.9l2.3 7.8-5.2 2.9c-13.7 7.7-17.1 22.2-7.9 32.9 7.6 9 25 9.7 26.9 1.3.9-4-1.2-8-5.5-10.8-6.9-4.4-8-5.4-8-7.2 0-1.6 2.9-5.1 4.2-5.1.3 0 1.3 1.8 2.3 4 1.2 2.6 3.4 5 6.4 6.9 2.5 1.6 8 5.3 12.1 8.2 8.2 5.7 35.8 19.9 38.7 19.9.9 0 5.5-2.6 10.1-5.7 7.2-5 8.5-5.6 10.2-4.5 1.1.7 2.7 1.2 3.5 1.2 4 0 12.5-7.8 12.5-11.4 0-1.1-.7-2.9-1.5-3.9-1.2-1.7-1-2.4 1.6-6 2.8-4.1 2.9-4.7 3.9-22.7.5-10.2 1-22.6 1-27.7v-9.1l-3.7-2.9c-4.1-3.1-7.6-5.3-19.2-11.6l-7.3-4-5.4 2.2-5.3 2.2-12.5-3C70.7 30.4 64.5 29 63.8 29c-.7.1-7.8 3.3-15.8 7.3m28.3-1.7c4.8.9 8.7 2 8.7 2.4 0 .9-11.5 8.7-16.9 11.4-5 2.6-12.8 8.5-13.4 10.1-.3.7.3 2.5 1.4 3.9 1.9 2.4 1.9 2.5 0 3.1-1.1.3-7-.5-13.2-1.9s-11.5-2.4-11.7-2.1c-.3.2.4.7 1.4 1.1 1 .3 9.1 4 17.9 8.1 8.8 4.2 19.2 9 23 10.8 11.4 5.4 12.3 5.4 21.8-.1 7.9-4.5 15.3-9.9 22.7-16.3 6.5-5.7.7-3.3-10.8 4.4C101 73.6 95.8 77 95.6 77c-.3 0-2.8 1.4-5.6 3.2l-5 3.1-2.8-2.5c-1.5-1.4-3.8-3.2-5.2-4.2-4-2.7-17-15.8-17-17.2 0-2.2 23.5-17.7 35-23 5.3-2.5 5.5-2.5 8.5-.8 4.9 2.9 16.8 11.9 19.5 14.8l2.5 2.8.3 25.3c.3 23.4.2 25.6-1.5 27.9-2.4 3.4-4.5 3.3-4.1-.2.3-2.3-.1-2.7-2.3-3-1.9-.2-4.6 1.1-9.5 4.9-8.1 6.1-10.3 8.6-10.4 11.6 0 1.8.6 2.3 2.5 2.3 1.5 0 2.5.6 2.5 1.4 0 1.9-10.8 8.6-13.8 8.6-6.2 0-41.8-17.9-49.6-24.9-1.6-1.4-3.9-4.9-5.1-7.6-2.7-6-10.7-37.8-10.3-40.8.4-2.9 13-11.7 31.3-22.2 4.7-2.6 8.8-4.3 10-4.1 1.1.3 5.9 1.2 10.8 2.2M28.8 90.2c2.1 2.1 1.3 4.8-2.3 8.2-2.7 2.6-3.5 4.1-3.5 6.9 0 4.2 1.3 5.6 8 9.3 5.7 3.1 7 5.6 4.4 8.5-2.2 2.5-10.5 2.6-15.4.1-4.1-2-7.7-7-8.6-12-1.3-6.6 3.5-15.3 11-19.7 4.8-2.9 4.8-2.9 6.4-1.3m88.5 21c1.8 1.1 3.8 2.8 4.5 3.6 1.4 1.8 1.6 6.2.3 6.2-.5 0-1.1.9-1.4 2s-1.4 2-2.4 2-2.4.5-3 1.1c-1.4 1.4-4.5-.2-8.4-4.4-3.5-3.8-3.2-7.1.9-10.4 3.4-2.9 5.5-2.9 9.5-.1"/></svg>`;
-    const ICON_CATBOX_BADGE = ICON_CLOUD.replace('width="16"', 'width="14"').replace('height="16"', 'height="14"');
+    const ICON_TELEGRAM = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle;"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>`;
+    const ICON_TELEGRAM_BADGE = ICON_CLOUD.replace('width="16"', 'width="14"').replace('height="16"', 'height="14"');
+
     const ICON_TWITTER = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 32 32" fill="currentColor" style="vertical-align: middle;"><path d="M25.2 1.54h4.91l-10.72 12.25L32 30.46h-9.87l-7.73-10.11-8.85 10.11H0.63l11.47-13.11L0 1.54h10.13l6.99 9.24ZM23.48 27.53h2.72L8.65 4.32H5.73Z"/></svg>`;
     const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
     const ICON_CHEVRON_UP = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>`;
@@ -51,6 +51,7 @@
     const VERSION = GM_info.script.version;
     const SETTINGS_KEY = 'x_bookmark_settings';
     const AUTOTAG_RULES_KEY = 'x_bookmark_autotag_rules';
+    const TELEGRAM_ROUTES_KEY = 'x_bookmark_telegram_routes';
     const DEFAULT_SETTINGS = {
         showUserLabel: true,
         hideOverlays: false,
@@ -63,10 +64,11 @@
             toggleView: 'g',
             openSettings: 's'
         },
-        catboxUserhash: '',
-        catboxAlbumShort: '',
-        catboxAutoBackup: true,
-        catboxFilterTags: [],
+        telegramAutoBackup: true,
+        telegramToken: '',
+        telegramChatId: '',
+        telegramUploadMode: 'document',
+        telegramFilterTags: [],
         collapsedSections: [],
         debugMode: false
     };
@@ -79,9 +81,20 @@
 
     // ==================== STORAGE ====================
     function getBookmarks() {
-        return GM_getValue(STORAGE_KEY, []);
+        const bookmarks = GM_getValue(STORAGE_KEY, []);
+        let migrated = false;
+        bookmarks.forEach(b => {
+            if (b.catboxUrls && !b.telegramUrls) {
+                b.telegramUrls = b.catboxUrls;
+                delete b.catboxUrls;
+                migrated = true;
+            }
+        });
+        if (migrated) {
+            setTimeout(() => saveBookmarks(bookmarks), 100);
+        }
+        return bookmarks;
     }
-
     function saveBookmarks(bookmarks) {
         GM_setValue(STORAGE_KEY, bookmarks);
     }
@@ -118,14 +131,22 @@
         GM_setValue(AUTOTAG_RULES_KEY, rules);
     }
 
+    function getTelegramRoutes() {
+        return GM_getValue(TELEGRAM_ROUTES_KEY, []);
+    }
+
+    function saveTelegramRoutes(routes) {
+        GM_setValue(TELEGRAM_ROUTES_KEY, routes);
+    }
+
     // ==================== FEEDBACK VISUAL ====================
     function showSaveIndicator(inputElement) {
         if (!inputElement) return;
 
         // Adicionar estilos de animação se não existirem
-        if (!document.getElementById('x-bookmark-save-indicator-style')) {
+        if (!document.getElementById('pinboard-save-indicator-style')) {
             const style = document.createElement('style');
-            style.id = 'x-bookmark-save-indicator-style';
+            style.id = 'pinboard-save-indicator-style';
             style.textContent = `
                 @keyframes saveGlow {
                     0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
@@ -176,69 +197,7 @@
         }
     }
 
-    // ==================== USERHASH VALIDATION ====================
-    async function validateCatboxUserhash(hash) {
-        const testImageUrl = 'https://i.imgur.com/iXv1SG6.png';
-
-        try {
-            // 1. Upload de teste
-            const formData = new FormData();
-            formData.append('reqtype', 'urlupload');
-            formData.append('userhash', hash);
-            formData.append('url', testImageUrl);
-
-            console.log('[X-Bookmark] Validating userhash...');
-
-            const uploadResult = await new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'POST',
-                    url: 'https://catbox.moe/user/api.php',
-                    data: formData,
-                    onload: (r) => resolve(r),
-                    onerror: (e) => reject(e)
-                });
-            });
-
-            console.log('[X-Bookmark] Upload response:', uploadResult.responseText);
-
-            if (!uploadResult.responseText.startsWith('https://')) {
-                throw new Error(uploadResult.responseText || 'Invalid userhash');
-            }
-
-            // 2. Deletar imagem de teste
-            const fileId = uploadResult.responseText.split('/').pop();
-            const deleteForm = new FormData();
-            deleteForm.append('reqtype', 'deletefiles');
-            deleteForm.append('userhash', hash);
-            deleteForm.append('files', fileId);
-
-            console.log('[X-Bookmark] Deleting test file:', fileId);
-
-            await new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: 'POST',
-                    url: 'https://catbox.moe/user/api.php',
-                    data: deleteForm,
-                    onload: (r) => {
-                        console.log('[X-Bookmark] Delete response:', r.responseText);
-                        resolve(r);
-                    },
-                    onerror: (e) => {
-                        console.warn('[X-Bookmark] Delete failed (non-critical):', e);
-                        resolve(e); // Ignora erros de delete
-                    }
-                });
-            });
-
-            console.log('[X-Bookmark] Userhash validated successfully');
-            return { valid: true };
-        } catch (error) {
-            console.error('[X-Bookmark] Userhash validation failed:', error.message || error);
-            return { valid: false, error: error.message || 'Validation failed' };
-        }
-    }
-
-    // ==================== CATBOX BACKUP ====================
+    // ==================== TELEGRAM BACKUP ====================
     // Normaliza URLs do Twitter para máxima qualidade (4096x4096)
     function formatTwitterUrl(src) {
         if (!src) return '';
@@ -251,159 +210,6 @@
             if (src.includes('?')) return src + '&name=4096x4096';
         }
         return src;
-    }
-
-    function extractCatboxFileId(url) {
-        if (!url || typeof url !== 'string') return '';
-        const clean = url.split('?')[0].split('#')[0];
-        const parts = clean.split('/');
-        return parts.length ? (parts[parts.length - 1] || '') : '';
-    }
-
-    function getKnownDeadFileIds() {
-        const raw = GM_getValue(KNOWN_DEAD_FILE_IDS_KEY, []);
-        if (!Array.isArray(raw)) return [];
-        return raw.filter(Boolean).map(String);
-    }
-
-    function saveKnownDeadFileIds(fileIds) {
-        const unique = [...new Set((fileIds || []).filter(Boolean).map(String))];
-        GM_setValue(KNOWN_DEAD_FILE_IDS_KEY, unique);
-    }
-
-    function rememberDeadFileIds(fileIds) {
-        const existing = getKnownDeadFileIds();
-        saveKnownDeadFileIds([...existing, ...(fileIds || [])]);
-    }
-
-    function isKnownDeadCatboxUrl(url) {
-        const fileId = extractCatboxFileId(url);
-        if (!fileId) return false;
-        const known = getKnownDeadFileIds();
-        return known.includes(fileId);
-    }
-
-    function isLikelyImageBuffer(buffer) {
-        if (!buffer || !(buffer instanceof ArrayBuffer) || buffer.byteLength < 12) return false;
-        const bytes = new Uint8Array(buffer);
-
-        // JPEG
-        if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return true;
-        // PNG
-        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return true;
-        // GIF
-        if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return true;
-        // WEBP: RIFF....WEBP
-        if (
-            bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
-            bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
-        ) {
-            return true;
-        }
-
-        return false;
-    }
-
-    async function probeImageUrl(url, timeoutMs = 7000, attempts = 1) {
-        if (!url) return false;
-
-        for (let i = 0; i < attempts; i++) {
-            const ok = await new Promise((resolve) => {
-                let settled = false;
-                const img = new Image();
-                const done = (result) => {
-                    if (settled) return;
-                    settled = true;
-                    resolve(result);
-                };
-
-                const timer = setTimeout(() => done(false), timeoutMs);
-                img.onload = () => {
-                    clearTimeout(timer);
-                    const w = img.naturalWidth || 0;
-                    const h = img.naturalHeight || 0;
-                    done(w > 1 && h > 1);
-                };
-                img.onerror = () => {
-                    clearTimeout(timer);
-                    done(false);
-                };
-
-                const sep = url.includes('?') ? '&' : '?';
-                img.src = `${url}${sep}x_bm_probe=${Date.now()}_${i}`;
-            });
-
-            if (ok) return true;
-        }
-
-        return false;
-    }
-
-    async function probeImageUrlByRequest(url, timeoutMs = 12000) {
-        if (!url) return { ok: false, reason: 'empty-url' };
-
-        const requestUrl = `${url}${url.includes('?') ? '&' : '?'}x_bm_req=${Date.now()}`;
-
-        const runProbe = (method) => new Promise((resolve) => {
-            GM_xmlhttpRequest({
-                method,
-                url: requestUrl,
-                timeout: timeoutMs,
-                responseType: method === 'GET' ? 'arraybuffer' : undefined,
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
-                },
-                onload: (response) => {
-                    const contentType = (getHeaderValue(response.responseHeaders || '', 'content-type') || '').toLowerCase();
-                    const okStatus = response.status >= 200 && response.status < 300;
-                    const bodySize = response.response && response.response.byteLength ? response.response.byteLength : 0;
-                    const typeIsImage = contentType.includes('image/') || contentType.includes('application/octet-stream');
-                    const bytesLookImage = method === 'GET' && isLikelyImageBuffer(response.response);
-                    const enoughBody = method !== 'GET' || bodySize >= 1024;
-                    const okType = method === 'HEAD'
-                        ? typeIsImage
-                        : (typeIsImage || bytesLookImage) && enoughBody;
-
-                    resolve({
-                        ok: okStatus && okType,
-                        method,
-                        status: response.status,
-                        contentType,
-                        bodySize,
-                        bytesLookImage
-                    });
-                },
-                onerror: () => resolve({ ok: false, method, reason: 'network-error' }),
-                ontimeout: () => resolve({ ok: false, method, reason: 'timeout' })
-            });
-        });
-
-        const headResult = await runProbe('HEAD');
-        if (headResult.ok) return headResult;
-
-        const getResult = await runProbe('GET');
-        return getResult.ok ? getResult : {
-            ok: false,
-            method: getResult.method || headResult.method,
-            status: getResult.status || headResult.status,
-            contentType: getResult.contentType || headResult.contentType,
-            reason: getResult.reason || headResult.reason || 'request-failed'
-        };
-    }
-
-    async function validateFinalCatboxUrl(url) {
-        if (!url) return { ok: false, reason: 'empty-url' };
-
-        // Pequeno atraso para evitar falso negativo logo apos upload
-        await new Promise(resolve => setTimeout(resolve, 1200));
-
-        const imageProbeOk = await probeImageUrl(url, 12000, 3);
-        if (imageProbeOk) {
-            return { ok: true, method: 'image' };
-        }
-
-        return await probeImageUrlByRequest(url, 15000);
     }
 
     function getHeaderValue(rawHeaders, headerName) {
@@ -452,351 +258,379 @@
         });
     }
 
-    function uploadBlobToCatbox(blob, fileName) {
-        return new Promise((resolve, reject) => {
-            const settings = getSettings();
-            const formData = new FormData();
-            formData.append('reqtype', 'fileupload');
-            if (settings.catboxUserhash) formData.append('userhash', settings.catboxUserhash);
-            formData.append('fileToUpload', blob, fileName);
+    // Verifica se o bot está configurado corretamente chamando getMe
+    async function validateTelegramCredentials(token) {
+        if (!token) return { valid: false, error: 'Token vazio' };
 
+        return new Promise((resolve) => {
             GM_xmlhttpRequest({
-                method: 'POST',
-                url: 'https://catbox.moe/user/api.php',
-                data: formData,
+                method: 'GET',
+                url: `https://api.telegram.org/bot${token}/getMe`,
                 onload: (response) => {
-                    const body = (response.responseText || '').trim();
-                    if (response.status === 200 && body.startsWith('https://')) {
-                        resolve(body);
-                    } else {
-                        reject(new Error(body || 'Upload de arquivo falhou'));
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.ok) {
+                            resolve({ valid: true, botName: data.result.username });
+                        } else {
+                            resolve({ valid: false, error: data.description || 'Token inválido' });
+                        }
+                    } catch (e) {
+                        resolve({ valid: false, error: 'Resposta inválida da API' });
                     }
                 },
-                onerror: () => reject(new Error('Falha de rede no upload de arquivo'))
+                onerror: () => resolve({ valid: false, error: 'Erro de rede' })
             });
         });
     }
 
-    async function reencodeBlobForNewHash(blob, salt = 0) {
-        const objectUrl = URL.createObjectURL(blob);
-
-        try {
-            const image = await new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => reject(new Error('Falha ao decodificar imagem para reencode'));
-                img.src = objectUrl;
-            });
-
-            const width = image.naturalWidth || image.width;
-            const height = image.naturalHeight || image.height;
-            if (!width || !height) return null;
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return null;
-
-            ctx.drawImage(image, 0, 0, width, height);
-
-            // Muta 1 pixel para forcar hash diferente sem impacto visual perceptivel
-            const nonce = (Date.now() + salt) & 0xffff;
-            const px = Math.max(0, width - 1);
-            const py = Math.max(0, height - 1);
-            const imageData = ctx.getImageData(px, py, 1, 1);
-            imageData.data[0] = (imageData.data[0] + (nonce & 0x0f) + 1) % 256;
-            imageData.data[1] = (imageData.data[1] + ((nonce >> 4) & 0x0f) + 1) % 256;
-            ctx.putImageData(imageData, px, py);
-
-            const targetType = (blob.type || '').includes('png') ? 'image/png' : 'image/jpeg';
-            const quality = targetType === 'image/jpeg' ? 0.96 : undefined;
-
-            const recodedBlob = await new Promise((resolve) => {
-                canvas.toBlob((result) => resolve(result || null), targetType, quality);
-            });
-
-            return recodedBlob;
-        } finally {
-            URL.revokeObjectURL(objectUrl);
-        }
-    }
-
-    async function forceUploadWithNewHash(originalUrl, deadCatboxUrl) {
-        const candidates = [];
-        const normalized = formatTwitterUrl(originalUrl);
-        if (normalized) candidates.push(normalized);
-
-        if (normalized && normalized.includes('name=4096x4096')) {
-            candidates.push(normalized.replace('name=4096x4096', 'name=large'));
-        }
-
-        if (originalUrl && !candidates.includes(originalUrl)) {
-            candidates.push(originalUrl);
-        }
-
-        for (let i = 0; i < candidates.length; i++) {
-            const candidate = candidates[i];
-
-            try {
-                console.log(`[X-Bookmark] Fallback binario ${i + 1}/${candidates.length}:`, candidate);
-                const blob = await downloadUrlAsBlob(candidate);
-                const ext = guessImageExtension(blob.type, candidate);
-
-                const directName = `xbm_${Date.now()}_${i}_direct.${ext}`;
-                const directUrl = await uploadBlobToCatbox(blob, directName);
-                console.log('[X-Bookmark] Upload binario direto retornou:', directUrl);
-
-                const directIsKnownDead = directUrl === deadCatboxUrl || isKnownDeadCatboxUrl(directUrl);
-                if (directIsKnownDead) {
-                    console.warn('[X-Bookmark] Upload binario direto retornou ID morto conhecido. Pulando:', directUrl);
-                } else {
-                    const directValidation = await validateFinalCatboxUrl(directUrl);
-                    if (directValidation.ok) {
-                        return directUrl;
-                    }
-                    console.warn('[X-Bookmark] Upload binario direto nao validou:', directValidation);
-                }
-
-                for (let recodeTry = 0; recodeTry < 2; recodeTry++) {
-                    const recodedBlob = await reencodeBlobForNewHash(blob, i * 100 + recodeTry);
-                    if (!recodedBlob) continue;
-
-                    const recodedExt = guessImageExtension(recodedBlob.type, candidate);
-                    const recodedName = `xbm_${Date.now()}_${i}_recoded_${recodeTry + 1}.${recodedExt}`;
-                    const recodedUrl = await uploadBlobToCatbox(recodedBlob, recodedName);
-                    console.log(`[X-Bookmark] Upload binario recodificado #${recodeTry + 1} retornou:`, recodedUrl);
-
-                    const recodedIsKnownDead = recodedUrl === deadCatboxUrl || isKnownDeadCatboxUrl(recodedUrl);
-                    if (recodedIsKnownDead) {
-                        console.warn('[X-Bookmark] Upload recodificado ainda retornou ID morto conhecido.');
-                        continue;
-                    }
-
-                    const recodedValidation = await validateFinalCatboxUrl(recodedUrl);
-                    if (recodedValidation.ok) {
-                        return recodedUrl;
-                    }
-                    console.warn(`[X-Bookmark] Upload binario recodificado #${recodeTry + 1} nao validou:`, recodedValidation);
-                }
-            } catch (error) {
-                console.warn('[X-Bookmark] Fallback binario falhou:', error.message || error);
-            }
-        }
-
-        return null;
-    }
-
-    function uploadToCatboxSingle(imageUrl) {
-        return new Promise((resolve, reject) => {
-            const settings = getSettings();
-            const formData = new FormData();
-            formData.append('reqtype', 'urlupload');
-            formData.append('url', imageUrl);
-            if (settings.catboxUserhash) {
-                formData.append('userhash', settings.catboxUserhash);
-            }
-
+    function validateTelegramChat(token, chatId) {
+        return new Promise((resolve) => {
             GM_xmlhttpRequest({
-                method: 'POST',
-                url: 'https://catbox.moe/user/api.php',
-                data: formData,
+                method: 'GET',
+                url: `https://api.telegram.org/bot${token}/getChat?chat_id=${encodeURIComponent(chatId)}`,
                 onload: (response) => {
-                    if (response.status === 200 && response.responseText.startsWith('https://')) {
-                        resolve(response.responseText.trim());
-                    } else {
-                        reject(new Error(response.responseText || 'Upload failed'));
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.ok) {
+                            resolve({ valid: true, title: data.result.title || data.result.first_name || data.result.username || 'Chat' });
+                        } else {
+                            resolve({ valid: false, error: data.description });
+                        }
+                    } catch (e) {
+                        resolve({ valid: false, error: 'Resposta inválida' });
                     }
                 },
-                onerror: (error) => {
-                    reject(error);
-                }
+                onerror: () => resolve({ valid: false, error: 'Erro de rede' })
             });
         });
     }
 
-    // Tenta upload com URL primária (4k), fallback para large se falhar
-    async function uploadToCatbox(url) {
-        // Normalizar URL para 4k
-        const url4k = formatTwitterUrl(url);
+    function getTelegramFileUrl(fileId) {
+        const token = getSettings().telegramToken;
+        if (!token || !fileId) return Promise.reject(new Error('Token ou file_id ausente'));
 
-        try {
-            // Tentar URL 4k
-            return await uploadToCatboxSingle(url4k);
-        } catch (primaryError) {
-            console.log('[X-Bookmark] 4k upload failed, trying large:', primaryError.message);
-            // Se falhou e é URL do Twitter, tentar versão large
-            if (url4k.includes('name=4096x4096')) {
-                const urlLarge = url4k.replace('name=4096x4096', 'name=large');
-                try {
-                    return await uploadToCatboxSingle(urlLarge);
-                } catch (fallbackError) {
-                    console.error('[X-Bookmark] Large fallback also failed:', fallbackError.message);
-                    throw fallbackError;
-                }
-            }
-            throw primaryError;
-        }
-    }
-
-    function addToCatboxAlbum(fileIds) {
         return new Promise((resolve, reject) => {
-            const settings = getSettings();
-            if (!settings.catboxUserhash || !settings.catboxAlbumShort) {
-                resolve(); // Não faz nada se não tiver userhash ou album
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('reqtype', 'addtoalbum');
-            formData.append('userhash', settings.catboxUserhash);
-            formData.append('short', settings.catboxAlbumShort);
-            formData.append('files', fileIds.join(' '));
-
             GM_xmlhttpRequest({
-                method: 'POST',
-                url: 'https://catbox.moe/user/api.php',
-                data: formData,
+                method: 'GET',
+                url: `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
                 onload: (response) => {
-                    resolve(response.responseText);
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (!data.ok || !data.result?.file_path) {
+                            reject(new Error(data.description || 'getFile falhou'));
+                            return;
+                        }
+                        const fileUrl = `https://api.telegram.org/file/bot${token}/${data.result.file_path}`;
+                        // Nova chamada em formato binário para contornar bloqueio CSP do Twitter
+                        GM_xmlhttpRequest({
+                            method: 'GET',
+                            url: fileUrl,
+                            responseType: 'arraybuffer',
+                            onload: (fileRes) => {
+                                if (fileRes.status === 200) {
+                                    const headerMatch = fileRes.responseHeaders?.match(/content-type:\s*([^\r\n]*)/i);
+                                    const contentType = headerMatch ? headerMatch[1].trim() : 'image/jpeg';
+                                    const blob = new Blob([fileRes.response], { type: contentType });
+                                    resolve(URL.createObjectURL(blob));
+                                } else {
+                                    reject(new Error('Falha ao carregar conteúdo blob CSP bypass'));
+                                }
+                            },
+                            onerror: () => reject(new Error('Erro de rede no CSP bypass'))
+                        });
+                    } catch (e) {
+                        reject(new Error('Resposta inválida do getFile'));
+                    }
                 },
-                onerror: (error) => {
-                    reject(error);
-                }
+                onerror: () => reject(new Error('Falha de rede no getFile'))
             });
         });
     }
 
-    // Deleta arquivos do Catbox (requer userhash)
-    async function deleteFromCatbox(fileIds) {
+    // Envia um blob para o chat do Telegram via sendDocument e/ou sendPhoto com base nas configurações
+    async function uploadToTelegram(blob, filename, caption, threadId = null) {
         const settings = getSettings();
-        if (!settings.catboxUserhash || !fileIds.length) return null;
+        const token = settings.telegramToken;
+        const chatId = settings.telegramChatId;
+        const mode = settings.telegramUploadMode || 'document'; // 'document', 'photo', 'both'
 
-        const normalizedIds = fileIds
-            .map(id => extractCatboxFileId(id))
-            .filter(Boolean);
+        if (!token || !chatId) {
+            return Promise.reject(new Error('Telegram não configurado: insira o token e o Chat ID nas configurações'));
+        }
 
-        if (!normalizedIds.length) return null;
+        const sendPhoto = () => {
+            return new Promise((resolve) => {
+                const photoData = new FormData();
+                photoData.append('chat_id', chatId);
+                if (threadId) photoData.append('message_thread_id', threadId);
 
-        console.log('[X-Bookmark] Solicitando exclusão de arquivos no Catbox:', normalizedIds.join(', '));
+                if (typeof blob === 'string') {
+                    photoData.append('photo', blob);
+                } else {
+                    photoData.append('photo', blob, filename);
+                }
+                if (caption) photoData.append('caption', caption);
 
-        const formData = new FormData();
-        formData.append('reqtype', 'deletefiles');
-        formData.append('userhash', settings.catboxUserhash);
-        formData.append('files', normalizedIds.join(' '));
+                if (getSettings().debugMode) {
+                    console.log(`[pinboard] sendPhoto disparado para chat_id=${chatId}, topic=${threadId}`);
+                    console.log('[Telegram Upload Payload]', { threadId, mode, chatId, formDataKeys: Array.from(photoData.keys()) });
+                }
 
-        return new Promise(resolve => {
-            GM_xmlhttpRequest({
-                method: 'POST',
-                url: 'https://catbox.moe/user/api.php',
-                data: formData,
-                onload: (r) => {
-                    const body = (r.responseText || '').trim();
-                    console.log(`[X-Bookmark] Resposta de exclusão (${normalizedIds.join(', ')}):`, body);
-                    if (body.toLowerCase().includes("file doesn't exist")) {
-                        console.warn('[X-Bookmark] Catbox recusou a exclusão. Normalmente isso indica userhash diferente do dono do arquivo.');
+                GM_xmlhttpRequest({
+                    method: 'POST',
+                    url: `https://api.telegram.org/bot${token}/sendPhoto`,
+                    data: photoData,
+                    onload: (response) => {
+                        try {
+                            const data = JSON.parse(response.responseText);
+                            if (data.ok && data.result?.photo) {
+                                const largestPhoto = data.result.photo.pop();
+                                resolve(largestPhoto.file_id ? `tg:${largestPhoto.file_id}` : null);
+                            } else {
+                                resolve(null);
+                            }
+                        } catch (e) {
+                            resolve(null);
+                        }
+                    },
+                    onerror: (e) => {
+                        console.error('[pinboard] Erro no sendPhoto:', e);
+                        resolve(null);
                     }
-                    resolve(r.responseText);
-                },
-                onerror: () => resolve(null)
+                });
             });
-        });
+        };
+
+        const sendDocument = () => {
+            return new Promise((resolve, reject) => {
+                const formData = new FormData();
+                formData.append('chat_id', chatId);
+                if (threadId) formData.append('message_thread_id', threadId);
+
+                if (typeof blob === 'string') {
+                    formData.append('document', blob);
+                } else {
+                    formData.append('document', blob, filename);
+                }
+                if (caption) formData.append('caption', caption);
+
+                if (getSettings().debugMode) console.log(`[pinboard] sendDocument disparado para chat_id=${chatId}, topic=${threadId}`);
+
+                GM_xmlhttpRequest({
+                    method: 'POST',
+                    url: `https://api.telegram.org/bot${token}/sendDocument`,
+                    data: formData,
+                    onload: (response) => {
+                        try {
+                            const data = JSON.parse(response.responseText);
+                            if (!data.ok) {
+                                reject(new Error(data.description || 'Telegram API error no sendDocument'));
+                                return;
+                            }
+                            const fileId = data.result?.document?.file_id;
+                            resolve(fileId ? `tg:${fileId}` : null);
+                        } catch (e) {
+                            reject(new Error('Resposta inválida do Telegram no sendDocument'));
+                        }
+                    },
+                    onerror: () => reject(new Error('Falha de rede no upload para o Telegram'))
+                });
+            });
+        };
+
+        try {
+            if (mode === 'photo') {
+                const photoId = await sendPhoto();
+                if (!photoId) throw new Error('Falha ao enviar foto');
+                return photoId;
+            } else if (mode === 'both') {
+                // Roda os dois, prioriza retornar o link original do document para uso interno
+                const [docId, photoId] = await Promise.all([
+                    sendDocument().catch(e => { console.error('Erro doc fallback both:', e); return null; }),
+                    sendPhoto().catch(e => { console.error('Erro photo fallback both:', e); return null; })
+                ]);
+                const finalId = docId || photoId;
+                if (!finalId) throw new Error('Ambos os uploads (both mode) falharam.');
+                return finalId;
+            } else {
+                // DEFAULT 'document'
+                return await sendDocument();
+            }
+        } catch (error) {
+            return Promise.reject(error);
+        }
     }
 
     async function backupBookmarkImages(bookmarkId, options = {}) {
-        const { isManual = false, progressInfo = null } = options;
+        const { isManual = false, progressInfo = null, forceUpload = false } = options;
         const bookmarks = getBookmarks();
         const bookmark = bookmarks.find(b => b.id === bookmarkId);
         if (!bookmark || !bookmark.images || bookmark.images.length === 0) return;
 
-        // Se ja existe mescla salva, nao faz backup das imagens cortadas
-        if (bookmark.mergedImageUrl && bookmark.mergedImageUrl.startsWith('https://')) {
+        // Se ja existe mescla salva na cloud do telegram e NÂO estamos forçando reupload
+        if (!forceUpload && bookmark.mergedImageUrl && bookmark.mergedImageUrl.startsWith('tg:')) {
             if (isManual) {
-                showToast('Post com mescla salva: backup das cortadas ignorado');
+                showToast('A mescla do post já possui backup cloud');
             }
             return;
         }
 
         // Verificar filtro de tags (apenas para backup automático)
         const settings = getSettings();
-        if (!isManual && settings.catboxFilterTags && settings.catboxFilterTags.length > 0) {
-            const hasTags = bookmark.tags?.some(t => settings.catboxFilterTags.includes(t));
+        if (!isManual && settings.telegramFilterTags && settings.telegramFilterTags.length > 0) {
+            const hasTags = bookmark.tags?.some(t => settings.telegramFilterTags.includes(t));
             if (!hasTags) {
-                console.log('[X-Bookmark] Backup skipped: no matching filter tags');
+                console.log('[pinboard] Backup skipped: no matching filter tags');
                 return;
             }
         }
 
-        // Se já tem catboxUrls completo, não faz nada
-        if (bookmark.catboxUrls && bookmark.catboxUrls.length === bookmark.images.length) {
-            const allValid = bookmark.catboxUrls.every(url => url && url.startsWith('https://'));
-            if (allValid) return;
+        // Se já tem telegramUrls completo, não faz nada
+        // Array helper iterável (se mescla disponível e em HTTP, priorizamos o upload exclusivo delo mesclada ao invés do carrossel cortado)
+        let imagesToUpload = [];
+        let isMergeUpload = false;
+
+        if (bookmark.mergedImageUrl && bookmark.mergedImageUrl.startsWith('https://')) {
+            imagesToUpload = [bookmark.mergedImageUrl];
+            isMergeUpload = true;
+        } else {
+            imagesToUpload = bookmark.images;
         }
 
-        const catboxUrls = bookmark.catboxUrls || [];
-        const fileIds = [];
+        // Se já tem telegramUrls completo *com base na array ativa*, não faz nada
+        let telegramUrls = bookmark.telegramUrls || [];
+        if (!isMergeUpload && telegramUrls.length === imagesToUpload.length) {
+            const allValid = telegramUrls.every(url => url && url.startsWith('tg:'));
+            if (allValid && !options.forceUpload) return; // Todas válidas
+        }
 
-        for (let i = 0; i < bookmark.images.length; i++) {
-            if (catboxUrls[i] && catboxUrls[i].startsWith('https://')) continue; // Já tem
+        const handle = extractHandle(bookmark.postUrl) || 'unknown';
+        const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
+
+        // --- PREPARAR ROTAS DE TÓPICOS ---
+        const routes = getTelegramRoutes();
+        const bTags = bookmark.tags || [];
+        const isFav = bookmark.isFavorite;
+
+        let targetThreads = new Set();
+        let anyRouteMatched = false;
+        let shouldKeepInGeneral = true;
+
+        routes.forEach(r => {
+            const matchFav = r.tag === '__FAVORITES__' && isFav;
+            const matchTag = bTags.includes(r.tag);
+
+            if (matchFav || matchTag) {
+                anyRouteMatched = true;
+                if (r.topicId) targetThreads.add(r.topicId);
+                // Se QUALQUER rota matched explícita negar a cópia pro geral, respeitamos
+                if (r.copyToGeneral === false) shouldKeepInGeneral = false;
+            }
+        });
+
+        if (!anyRouteMatched || shouldKeepInGeneral) {
+            targetThreads.add(null);
+        }
+
+        // Queremos garantir que o null (Geral) seja sempre o PRIMEIRO a subir pra gerar o file_id base
+        const targetsArray = Array.from(targetThreads).sort((a, b) => a === null ? -1 : (b === null ? 1 : 0));
+
+        const debugMode = getSettings().debugMode;
+        if (debugMode) console.log('[pinboard] Iniciando backup automático...', {
+            postId: bookmark.id,
+            bookmarkTags: bTags,
+            isFavorite: isFav,
+            routesMatched: routes.filter(r => bTags.includes(r.tag) || (r.tag === '__FAVORITES__' && isFav)),
+            resolvedTargets: targetsArray,
+            shouldKeepInGeneral
+        });
+
+        for (let i = 0; i < imagesToUpload.length; i++) {
+            if (!isMergeUpload && telegramUrls[i] && telegramUrls[i].startsWith('tg:') && !options.forceUpload) continue; // Já tem
 
             let progressText;
             if (progressInfo) {
                 progressInfo.current++;
                 progressText = `Fazendo backup ${progressInfo.current}/${progressInfo.total}...`;
             } else {
-                progressText = `Fazendo backup ${i + 1}/${bookmark.images.length}...`;
+                progressText = isMergeUpload ? `Fazendo backup da mescla...` : `Fazendo backup ${i + 1}/${imagesToUpload.length}...`;
             }
             showToast(progressText);
 
             try {
-                const catboxUrl = await uploadToCatbox(bookmark.images[i]);
-                catboxUrls[i] = catboxUrl;
+                // A formatTwitterUrl pega o formato certo pra download caso o direct link seja 'small' / 'thumb' etc
+                const imgUrl = isMergeUpload ? imagesToUpload[i] : formatTwitterUrl(imagesToUpload[i]);
+                const blob = await downloadUrlAsBlob(imgUrl);
+                const ext = guessImageExtension(blob.type, imgUrl);
+                const suffix = isMergeUpload ? 'mescla' : `${i + 1}`;
+                const filename = `@${handle}_${postId}_${suffix}.${ext}`;
+                let caption = `@${handle} — ${bookmark.postUrl}`;
+                if (isFav) caption += ' | ⭐ Favorite';
+                if (bTags.includes('AI?')) caption += ' | Possivelmente IA';
+                else if (bTags.includes('Yes, AI')) caption += ' | é IA';
 
-                // Extrair file ID para album (ex: "abc123.jpg" de "https://files.catbox.moe/abc123.jpg")
-                const fileId = catboxUrl.split('/').pop();
-                if (fileId) fileIds.push(fileId);
+                let finalRef = null;
+
+                for (let t = 0; t < targetsArray.length; t++) {
+                    const tid = targetsArray[t];
+                    // Na 1a iteração, envia o Blob. Nas demais, envia a ref (file_id) pra economizar banda e tempo.
+                    const payload = (t === 0) ? blob : finalRef.replace('tg:', '');
+
+                    const ref = await uploadToTelegram(payload, filename, caption, tid);
+                    if (t === 0) finalRef = ref;
+                }
+
+                if (isMergeUpload) {
+                    bookmark.mergedImageUrl = finalRef;
+                } else {
+                    telegramUrls[i] = finalRef || null;
+                }
             } catch (error) {
-                console.error('Catbox upload error:', error);
-                catboxUrls[i] = null; // Marca como falha
+                console.error('Telegram upload error:', error);
+                if (!isMergeUpload) telegramUrls[i] = null; // Marca como falha
             }
         }
 
-        // Atualizar bookmark com URLs do Catbox
+        // Atualizar bookmark com novos links
         const updatedBookmarks = getBookmarks();
         const idx = updatedBookmarks.findIndex(b => b.id === bookmarkId);
         if (idx !== -1) {
-            updatedBookmarks[idx].catboxUrls = catboxUrls;
-            saveBookmarks(updatedBookmarks);
-            console.log('[X-Bookmark] Saved catboxUrls:', catboxUrls);
-        }
-
-        // Adicionar ao álbum se configurado
-        if (fileIds.length > 0) {
-            try {
-                await addToCatboxAlbum(fileIds);
-            } catch (error) {
-                console.error('Catbox album error:', error);
+            if (isMergeUpload) {
+                updatedBookmarks[idx].mergedImageUrl = bookmark.mergedImageUrl;
+            } else {
+                updatedBookmarks[idx].telegramUrls = telegramUrls;
             }
+            saveBookmarks(updatedBookmarks);
+            console.log('[pinboard] Dados atualizados no array do Telegram/Mescla.');
         }
 
-        const successCount = catboxUrls.filter(u => u && u.startsWith('https://')).length;
-        showToast(`Backup concluído: ${successCount}/${bookmark.images.length} imagens`);
+        const successCount = isMergeUpload
+            ? (bookmark.mergedImageUrl?.startsWith('tg:') ? 1 : 0)
+            : telegramUrls.filter(u => u && u.startsWith('tg:')).length;
+
+        showToast(isMergeUpload
+            ? (successCount ? 'Backup da mescla concluído' : 'Falha no backup da mescla')
+            : `Backup concluído: ${successCount}/${imagesToUpload.length} imagens`);
     }
 
     function getImageUrl(bookmark, index) {
-        // Prioriza Twitter (CDN mais rápido) com 4k, fallback para Catbox
+        // Prioriza Twitter (CDN mais rápido) com 4k, fallback para Telegram
+        const tgRef = bookmark.telegramUrls?.[index];
+        const hasTelegramBackup = tgRef ? (tgRef.startsWith('tg:') || tgRef.startsWith('https://')) : false;
+
         if (bookmark.images && bookmark.images[index]) {
-            const hasCatboxBackup = bookmark.catboxUrls?.[index]?.startsWith('https://');
             // Usar formatTwitterUrl para garantir 4k
             const url4k = formatTwitterUrl(bookmark.images[index]);
-            return { url: url4k, fallbackUrl: null, isFallback: false, hasCatboxBackup };
+            return { url: url4k, fallbackUrl: null, isFallback: false, hasTelegramBackup };
         }
-        // Se não tem Twitter, usa Catbox
-        if (bookmark.catboxUrls && bookmark.catboxUrls[index] && bookmark.catboxUrls[index].startsWith('https://')) {
-            return { url: bookmark.catboxUrls[index], fallbackUrl: null, isFallback: true, hasCatboxBackup: true };
+        // Se não tem Twitter, não podemos retornar a URL do Telegram sincronamente se for tg:
+        // Retornamos um dummy para engatilhar o onerror, ou a URL legacy se existir.
+        if (tgRef && tgRef.startsWith('https://')) {
+            return { url: tgRef, fallbackUrl: null, isFallback: true, hasTelegramBackup: true };
+        } else if (tgRef && tgRef.startsWith('tg:')) {
+            return { url: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', fallbackUrl: null, isFallback: true, hasTelegramBackup: true };
         }
-        return { url: null, fallbackUrl: null, isFallback: true, hasCatboxBackup: false };
+        return { url: null, fallbackUrl: null, isFallback: true, hasTelegramBackup: false };
     }
 
     function getMergedImageFilename(bookmark) {
@@ -813,7 +647,7 @@
             saveAs: false,
             onload: () => showToast(`Download concluído: ${filename}`),
             onerror: (err) => {
-                console.error('[X-Bookmark] Download failed:', err);
+                console.error('[pinboard] Download failed:', err);
                 showToast('Erro no download');
             }
         });
@@ -840,7 +674,7 @@
         }
     }
 
-    function getMergeCandidates(bookmark, index) {
+    async function getMergeCandidates(bookmark, index) {
         const candidates = [];
         const original = bookmark?.images?.[index];
 
@@ -855,8 +689,17 @@
             if (original !== url4k) candidates.push(original);
         }
 
-        const catbox = bookmark?.catboxUrls?.[index];
-        if (catbox && catbox.startsWith('https://')) candidates.push(catbox);
+        const tgRef = bookmark?.telegramUrls?.[index];
+        if (tgRef) {
+            if (tgRef.startsWith('tg:')) {
+                try {
+                    const url = await getTelegramFileUrl(tgRef.slice(3));
+                    if (url) candidates.push(url);
+                } catch (e) { }
+            } else if (tgRef.startsWith('https://')) {
+                candidates.push(tgRef);
+            }
+        }
 
         return [...new Set(candidates.filter(Boolean))];
     }
@@ -883,7 +726,7 @@
             showToast(`Mesclando ${bookmark.images.length} imagens...`);
 
             for (let idx = 0; idx < bookmark.images.length; idx++) {
-                const candidates = getMergeCandidates(bookmark, idx);
+                const candidates = await getMergeCandidates(bookmark, idx);
                 let loaded = null;
 
                 for (const candidate of candidates) {
@@ -897,7 +740,7 @@
                         };
                         break;
                     } catch (error) {
-                        console.warn(`[X-Bookmark] Merge: falha ao carregar imagem ${idx + 1} de`, candidate, error.message || error);
+                        console.warn(`[pinboard] Merge: falha ao carregar imagem ${idx + 1} de`, candidate, error.message || error);
                     }
                 }
 
@@ -960,7 +803,7 @@
             const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
             const filename = `@${handle}_${postId}_merged.jpg`;
 
-            console.log('[X-Bookmark] Merge concluido:', {
+            console.log('[pinboard] Merge concluido:', {
                 bookmarkId: bookmark.id,
                 imagens: bookmark.images.length,
                 arquivo: filename,
@@ -974,7 +817,7 @@
                 height: totalHeight
             };
         } catch (error) {
-            console.error('[X-Bookmark] Falha ao mesclar imagens:', error);
+            console.error('[pinboard] Falha ao mesclar imagens:', error);
             showToast(`Erro na mescla: ${error.message || 'falha desconhecida'}`);
             return null;
         } finally {
@@ -995,11 +838,16 @@
         const handle = extractHandle(bookmark.postUrl) || 'unknown';
         const postId = bookmark.postUrl.match(/status\/(\d+)/)?.[1] || bookmark.id;
         const fileName = `@${handle}_${postId}_merged_${Date.now()}.jpg`;
+        const caption = `@${handle} — ${bookmark.postUrl} (mescla)`;
 
-        const mergedUrl = await uploadBlobToCatbox(mergeInfo.blob, fileName);
-        if (!mergedUrl || !mergedUrl.startsWith('https://files.catbox.moe/')) {
-            throw new Error('Catbox não retornou URL válida para a imagem mesclada');
+        // uploadToTelegram já retorna 'tg:{file_id}'
+        const telegramRef = await uploadToTelegram(mergeInfo.blob, fileName, caption);
+        if (!telegramRef) {
+            throw new Error('Telegram não retornou file_id para a imagem mesclada');
         }
+
+        // Armazenar como 'tg:{file_id}' — URL real obtida via getFile quando necessário
+        const mergedUrl = telegramRef;
 
         const bookmarks = getBookmarks();
         const bmIdx = bookmarks.findIndex(b => b.id === bookmark.id);
@@ -1012,17 +860,7 @@
         bookmark.mergedImageUrl = mergedUrl;
         bookmark.mergedImageUpdatedAt = new Date().toISOString();
 
-        const settings = getSettings();
-        const mergedFileId = extractCatboxFileId(mergedUrl);
-        if (settings.catboxAlbumShort && mergedFileId) {
-            try {
-                await addToCatboxAlbum([mergedFileId]);
-            } catch (albumError) {
-                console.warn('[X-Bookmark] Falha ao adicionar mescla no album:', albumError.message || albumError);
-            }
-        }
-
-        console.log('[X-Bookmark] Mescla salva na galeria:', {
+        console.log('[pinboard] Mescla salva na galeria (Telegram):', {
             bookmarkId: bookmark.id,
             mergedUrl
         });
@@ -1057,7 +895,7 @@
         });
 
         showToast(`Baixando ${bookmark.images.length} imagem(ns)...`);
-			selectedItems.clear();
+        selectedItems.clear();
     }
 
     function downloadSelectedItems() {
@@ -1145,11 +983,11 @@
     }
 
     function showToast(message) {
-        const existing = document.getElementById('x-bookmark-toast');
+        const existing = document.getElementById('pinboard-toast');
         if (existing) existing.remove();
 
         const toast = document.createElement('div');
-        toast.id = 'x-bookmark-toast';
+        toast.id = 'pinboard-toast';
         toast.innerText = message;
         toast.style = `
             position: fixed; bottom: 90px; right: 20px; z-index: 10003;
@@ -1160,9 +998,9 @@
         `;
 
         // Add animation keyframes
-        if (!document.getElementById('x-bookmark-toast-style')) {
+        if (!document.getElementById('pinboard-toast-style')) {
             const style = document.createElement('style');
-            style.id = 'x-bookmark-toast-style';
+            style.id = 'pinboard-toast-style';
             style.textContent = `
                 @keyframes slideIn {
                     from { opacity: 0; transform: translateX(50px); }
@@ -1186,11 +1024,11 @@
 
     // Toast centralizado estilo X (para adicionar/remover bookmarks)
     function showBookmarkToast(message, showButton = false) {
-        const existing = document.getElementById('x-bookmark-center-toast');
+        const existing = document.getElementById('pinboard-center-toast');
         if (existing) existing.remove();
 
         const toast = document.createElement('div');
-        toast.id = 'x-bookmark-center-toast';
+        toast.id = 'pinboard-center-toast';
         toast.style = `
             position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%);
             z-index: 10004; display: flex; align-items: center;
@@ -1228,9 +1066,9 @@
         }
 
         // Adicionar animação
-        if (!document.getElementById('x-bookmark-center-toast-style')) {
+        if (!document.getElementById('pinboard-center-toast-style')) {
             const style = document.createElement('style');
-            style.id = 'x-bookmark-center-toast-style';
+            style.id = 'pinboard-center-toast-style';
             style.textContent = `
                 @keyframes toastSlideUp {
                     from { opacity: 0; transform: translateX(-50%) translateY(20px); }
@@ -1342,7 +1180,7 @@
             header.appendChild(iconCircle);
 
             const title = document.createElement('h3');
-            title.innerText = 'Backup no Catbox';
+            title.innerText = 'Backup no Telegram';
             title.style = 'margin: 0 0 8px 0; font-size: 18px; font-weight: 600; color: white;';
             header.appendChild(title);
 
@@ -1606,6 +1444,79 @@
         document.body.appendChild(overlay);
     }
 
+    function showChoiceModal(message, choices = []) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.style = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.8); z-index: 10001;
+                display: flex; justify-content: center; align-items: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style = `
+                background: #15181c; padding: 25px; border-radius: 16px;
+                width: 400px; max-width: 90%; color: white; border: 1px solid #333;
+                text-align: center;
+            `;
+
+            const text = document.createElement('p');
+            // Transforma quebras de linha \n em <br> pro texto formatar direito
+            text.innerHTML = message.replace(/\\n/g, '<br>');
+            text.style = 'margin: 0 0 25px 0; color: #e1e1e1; font-size: 15px; line-height: 1.5;';
+            modal.appendChild(text);
+
+            const btnContainer = document.createElement('div');
+            btnContainer.style = 'display: flex; flex-direction: column; gap: 10px;';
+
+            choices.forEach(choice => {
+                const btn = document.createElement('button');
+                btn.innerText = choice.label;
+                
+                // Tema base
+                const bgColor = choice.bg || '#2a2a2a';
+                const textColor = choice.color || 'white';
+                const fontWeight = choice.bold ? 'bold' : 'normal';
+
+                btn.style = `
+                    width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333;
+                    background: ${bgColor}; color: ${textColor}; font-weight: ${fontWeight};
+                    cursor: pointer; transition: all 0.2s; font-size: 14px;
+                `;
+                
+                // Hover Effects
+                btn.onmouseenter = () => { 
+                    btn.style.filter = 'brightness(1.2)'; 
+                    if (bgColor === '#2a2a2a' || bgColor === '#333') btn.style.borderColor = '#555';
+                };
+                btn.onmouseleave = () => { 
+                    btn.style.filter = 'brightness(1)';
+                    btn.style.borderColor = '#333';
+                };
+
+                btn.onclick = () => {
+                    resolve(choice.value);
+                    overlay.remove();
+                };
+
+                btnContainer.appendChild(btn);
+            });
+
+            modal.appendChild(btnContainer);
+            overlay.appendChild(modal);
+
+            // Clicar fora resolve null
+            overlay.onclick = (e) => { 
+                if (e.target === overlay) {
+                    resolve(null);
+                    overlay.remove();
+                }
+            };
+            
+            document.body.appendChild(overlay);
+        });
+    }
+
     function showTagSelector(bookmark, onUpdate) {
         const overlay = document.createElement('div');
         overlay.style = `
@@ -1693,12 +1604,12 @@
     // ==================== SETTINGS MODAL ====================
     function SettingsModal(onSave) {
         // Evitar múltiplos modais
-        if (document.getElementById('x-bookmark-settings-overlay')) return;
+        if (document.getElementById('pinboard-settings-overlay')) return;
 
         const settings = getSettings();
 
         const overlay = document.createElement('div');
-        overlay.id = 'x-bookmark-settings-overlay';
+        overlay.id = 'pinboard-settings-overlay';
         overlay.style = `
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.8); z-index: 10001;
@@ -1716,7 +1627,10 @@
         const closeX = document.createElement('button');
         closeX.innerHTML = ICON_X;
         closeX.style = 'position: absolute; top: 15px; right: 15px; background: transparent; border: none; color: #888; cursor: pointer; padding: 5px; display: flex; align-items: center; justify-content: center;';
-        closeX.onclick = () => { overlay.remove(); if (onSave) onSave(); };
+        closeX.onclick = () => { 
+            overlay.remove(); 
+            if (onSave) setTimeout(onSave, 10); 
+        };
         closeX.onmouseenter = () => closeX.style.color = 'white';
         closeX.onmouseleave = () => closeX.style.color = '#888';
         modal.appendChild(closeX);
@@ -2061,198 +1975,218 @@
         }
 
         // === SEÇÃO 3: BACKUP NA NUVEM ===
-        settingsContainer.appendChild(createCollapsibleSection('backup', ICON_CLOUD, 'Backup na Nuvem (Catbox)', (content) => {
-            // Indicador de status de conexão
+        settingsContainer.appendChild(createCollapsibleSection('backup', ICON_CLOUD, 'Backup no Telegram', (content) => {
+            // Indicador de status
             const statusIndicator = document.createElement('div');
             statusIndicator.style = 'display: flex; align-items: center; gap: 8px; margin-bottom: 10px;';
 
             const statusDot = document.createElement('span');
-            const hasUserhash = !!settings.catboxUserhash;
-            statusDot.style = `
-                width: 8px; height: 8px; border-radius: 50%;
-                background: ${hasUserhash ? '#22c55e' : '#ef4444'};
-                transition: background 0.3s ease;
-            `;
+            const hasCredentials = !!(settings.telegramToken && settings.telegramChatId);
+            statusDot.style = `width: 8px; height: 8px; border-radius: 50%; background: ${hasCredentials ? '#22c55e' : '#ef4444'}; transition: background 0.3s ease;`;
 
             const statusText = document.createElement('span');
-            statusText.innerText = hasUserhash ? 'Configurado' : 'Hash não configurado';
-            statusText.style = `color: ${hasUserhash ? '#22c55e' : '#ef4444'}; font-size: 11px; transition: color 0.3s ease;`;
+            statusText.innerText = hasCredentials ? 'Configurado' : 'Credenciais não configuradas';
+            statusText.style = `color: ${hasCredentials ? '#22c55e' : '#ef4444'}; font-size: 11px; transition: color 0.3s ease;`;
 
             statusIndicator.appendChild(statusDot);
             statusIndicator.appendChild(statusText);
             content.appendChild(statusIndicator);
 
             const desc = document.createElement('p');
-            desc.innerText = 'Faça backup das imagens no Catbox para evitar perda quando deletadas do Twitter.';
-            desc.style = 'color: #666; font-size: 11px; margin: 0;';
+            desc.innerText = 'Imagens são enviadas ao chat do Telegram como documentos (sem compressão) ao salvar um bookmark.';
+            desc.style = 'color: #666; font-size: 11px; margin: 0 0 10px 0;';
             content.appendChild(desc);
 
-            // Toggle backup automático
-            const autoRow = document.createElement('div');
-            autoRow.style = 'display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #15181c; border-radius: 8px; margin-top: 10px;';
-            autoRow.innerHTML = '<div><span style="color: white; font-size: 13px;">Backup automático</span><br><span style="color: #666; font-size: 11px;">Envia imagens ao salvar bookmark</span></div>';
+            // Função para atualizar status visual
+            const updateStatus = (state, message) => {
+                const colors = { valid: '#22c55e', invalid: '#ef4444', validating: '#eab308', empty: '#ef4444' };
+                statusDot.style.background = colors[state] || colors.empty;
+                statusText.style.color = colors[state] || colors.empty;
+                statusText.innerText = message;
+            };
 
-            const autoToggle = document.createElement('button');
-            let isOn = settings.catboxAutoBackup;
-            autoToggle.innerHTML = isOn ? 'On' : 'Off';
-            autoToggle.style = `padding: 8px 18px; border-radius: 20px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: ${isOn ? '#1d9bf0' : '#333'}; color: ${isOn ? 'white' : '#888'}; transition: all 0.2s;`;
+            // Token input
+            const tokenRow = document.createElement('div');
+            tokenRow.style = 'margin-bottom: 8px;';
+            tokenRow.innerHTML = '<label style="display: block; color: #888; font-size: 11px; margin-bottom: 4px;">Bot Token</label>';
 
-            // Userhash input com toggle de visibilidade
-            const hashRow = document.createElement('div');
-            hashRow.style = 'margin-top: 10px;';
-            hashRow.innerHTML = '<label style="display: block; color: #888; font-size: 11px; margin-bottom: 4px;">Userhash <span style="color: #555;">(opcional)</span></label>';
+            const tokenInputWrapper = document.createElement('div');
+            tokenInputWrapper.style = 'position: relative; display: flex; align-items: center;';
 
-            const hashInputWrapper = document.createElement('div');
-            hashInputWrapper.style = 'position: relative; display: flex; align-items: center;';
-
-            const hashInput = document.createElement('input');
-            hashInput.type = 'password';
-            hashInput.placeholder = 'Deixe vazio para upload anônimo';
-            hashInput.value = settings.catboxUserhash || '';
-            hashInput.disabled = !isOn;
-            hashInput.style = `
+            const tokenInput = document.createElement('input');
+            tokenInput.type = 'password';
+            tokenInput.placeholder = '123456:ABC-DEF...';
+            tokenInput.value = settings.telegramToken || '';
+            tokenInput.style = `
                 width: 100%; padding: 10px 40px 10px 12px; border-radius: 8px;
                 border: 1px solid #333; background: #15181c; color: white;
                 font-size: 12px; box-sizing: border-box; font-family: monospace;
-                opacity: ${isOn ? '1' : '0.5'}; transition: all 0.3s ease;
+                transition: border-color 0.3s ease;
             `;
 
-            // Toggle de visibilidade (eye icon)
-            const toggleVisibility = document.createElement('button');
-            toggleVisibility.innerHTML = ICON_EYE;
-            toggleVisibility.title = 'Mostrar/ocultar userhash';
-            toggleVisibility.style = `
+            const toggleTokenVisibility = document.createElement('button');
+            toggleTokenVisibility.innerHTML = ICON_EYE;
+            toggleTokenVisibility.title = 'Mostrar/ocultar token';
+            toggleTokenVisibility.style = `
                 position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
                 background: transparent; border: none; color: #666; cursor: pointer;
                 padding: 4px; display: flex; align-items: center; justify-content: center;
                 transition: color 0.2s;
             `;
-            toggleVisibility.onmouseenter = () => toggleVisibility.style.color = '#1d9bf0';
-            toggleVisibility.onmouseleave = () => toggleVisibility.style.color = '#666';
-            toggleVisibility.onclick = () => {
-                const isPassword = hashInput.type === 'password';
-                hashInput.type = isPassword ? 'text' : 'password';
-                toggleVisibility.innerHTML = isPassword ? ICON_EYE_OFF : ICON_EYE;
+            toggleTokenVisibility.onmouseenter = () => toggleTokenVisibility.style.color = '#1d9bf0';
+            toggleTokenVisibility.onmouseleave = () => toggleTokenVisibility.style.color = '#666';
+            toggleTokenVisibility.onclick = () => {
+                const isPass = tokenInput.type === 'password';
+                tokenInput.type = isPass ? 'text' : 'password';
+                toggleTokenVisibility.innerHTML = isPass ? ICON_EYE_OFF : ICON_EYE;
             };
 
-            hashInputWrapper.appendChild(hashInput);
-            hashInputWrapper.appendChild(toggleVisibility);
+            tokenInputWrapper.appendChild(tokenInput);
+            tokenInputWrapper.appendChild(toggleTokenVisibility);
+            tokenRow.appendChild(tokenInputWrapper);
 
-            // Container de erro para validação
-            const errorContainer = document.createElement('div');
-            errorContainer.style = 'color: #ef4444; font-size: 11px; margin-top: 4px; display: none;';
+            const tokenError = document.createElement('div');
+            tokenError.style = 'color: #ef4444; font-size: 11px; margin-top: 4px; display: none;';
+            tokenRow.appendChild(tokenError);
+            content.appendChild(tokenRow);
 
-            // Variáveis de debounce
-            let validationTimeout = null;
-            let isValidating = false;
+            // Chat ID input
+            const groupRow = document.createElement('div');
+            groupRow.style = 'margin-bottom: 10px;';
+            const groupLabel = document.createElement('label');
+            groupLabel.style = 'display: flex; justify-content: space-between; align-items: flex-end; color: #888; font-size: 11px; margin-bottom: 4px;';
+            groupLabel.innerHTML = `<span>Chat ID <span style="color:#555;">(grupo: -100..., DM: seu user ID)</span></span><span id="pinboard-chat-title" style="color:#10b981; font-weight:600; font-size:12px;"></span>`;
+            groupRow.appendChild(groupLabel);
 
-            // Função para atualizar status visual
-            const updateStatus = (state, message) => {
-                const colors = {
-                    valid: '#22c55e',
-                    invalid: '#ef4444',
-                    validating: '#eab308',
-                    empty: '#ef4444'
-                };
-                statusDot.style.background = colors[state] || colors.empty;
-                statusText.style.color = colors[state] || colors.empty;
-                statusText.innerText = message;
+            const groupInput = document.createElement('input');
+            groupInput.type = 'text';
+            groupInput.placeholder = '-1001234567890 ou 123456789';
+            groupInput.value = settings.telegramChatId || '';
+            groupInput.style = `
+                width: 100%; padding: 10px 12px; border-radius: 8px;
+                border: 1px solid #333; background: #15181c; color: white;
+                font-size: 12px; box-sizing: border-box; font-family: monospace;
+                transition: border-color 0.3s ease;
+            `;
+            groupRow.appendChild(groupInput);
+            content.appendChild(groupRow);
 
-                // Atualizar borda do input baseado no estado
-                if (state === 'valid') {
-                    hashInput.style.borderColor = '#22c55e';
-                } else if (state === 'invalid') {
-                    hashInput.style.borderColor = '#ef4444';
-                } else if (state === 'validating') {
-                    hashInput.style.borderColor = '#eab308';
-                } else {
-                    hashInput.style.borderColor = '#333';
-                }
-            };
+            // Botão Verificar bot
+            const verifyRow = document.createElement('div');
+            verifyRow.style = 'margin-bottom: 12px;';
+            const verifyBtn = document.createElement('button');
+            verifyBtn.innerText = 'Verificar bot';
+            verifyBtn.style = `
+                padding: 8px 16px; border-radius: 20px;
+                background: #1d9bf0; border: none;
+                color: white; cursor: pointer; font-size: 12px; font-weight: 600;
+                transition: background 0.2s ease;
+            `;
+            verifyBtn.onmouseenter = () => verifyBtn.style.background = '#1a8cd8';
+            verifyBtn.onmouseleave = () => verifyBtn.style.background = '#1d9bf0';
+            verifyBtn.onclick = async () => {
+                const token = tokenInput.value.trim();
+                const groupId = groupInput.value.trim();
 
-            // Album input
-            const albumRow = document.createElement('div');
-            albumRow.style = 'margin-top: 8px;';
-            albumRow.innerHTML = '<label style="display: block; color: #888; font-size: 11px; margin-bottom: 4px;">Album Short <span style="color: #555;">(opcional)</span></label>';
-            const albumInput = document.createElement('input');
-            albumInput.type = 'text';
-            albumInput.placeholder = 'ID do álbum (ex: pd412w)';
-            albumInput.value = settings.catboxAlbumShort || '';
-            albumInput.disabled = !hashInput.value || !isOn;
-            albumInput.style = `width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #15181c; color: white; font-size: 12px; box-sizing: border-box; opacity: ${(hashInput.value && isOn) ? '1' : '0.5'};`;
-
-            autoToggle.onclick = () => {
-                isOn = !isOn;
-                saveSetting('catboxAutoBackup', isOn);
-                autoToggle.innerHTML = isOn ? 'On' : 'Off';
-                autoToggle.style.background = isOn ? '#1d9bf0' : '#333';
-                autoToggle.style.color = isOn ? 'white' : '#888';
-                hashInput.disabled = !isOn;
-                hashInput.style.opacity = isOn ? '1' : '0.5';
-                albumInput.disabled = !isOn || !hashInput.value;
-                albumInput.style.opacity = (isOn && hashInput.value) ? '1' : '0.5';
-            };
-
-            // Handler de input com debounce e validação
-            hashInput.oninput = () => {
-                const value = hashInput.value.trim();
-
-                // Limpar timeout anterior
-                if (validationTimeout) {
-                    clearTimeout(validationTimeout);
-                }
-
-                // Esconder erro anterior
-                errorContainer.style.display = 'none';
-
-                // Atualizar estado do album input
-                albumInput.disabled = !value || !isOn;
-                albumInput.style.opacity = (value && isOn) ? '1' : '0.5';
-
-                if (!value) {
-                    updateStatus('empty', 'Hash não configurado');
-                    hashInput.style.borderColor = '#333';
+                if (!token) {
+                    tokenError.innerText = '❌ Insira o token do bot';
+                    tokenError.style.display = 'block';
+                    updateStatus('invalid', 'Token não configurado');
                     return;
                 }
 
-                // Debounce de 1.5s antes de validar
-                updateStatus('validating', 'Aguardando...');
+                tokenError.style.display = 'none';
+                updateStatus('validating', 'Verificando...');
+                verifyBtn.disabled = true;
+                verifyBtn.innerText = 'Verificando...';
 
-                validationTimeout = setTimeout(async () => {
-                    if (isValidating) return;
-                    isValidating = true;
+                const result = await validateTelegramCredentials(token);
 
-                    updateStatus('validating', 'Validando...');
+                verifyBtn.disabled = false;
+                verifyBtn.innerText = 'Verificar bot';
 
-                    const result = await validateCatboxUserhash(value);
-
-                    isValidating = false;
-
-                    if (result.valid) {
-                        updateStatus('valid', 'Userhash válido ✓');
-                        saveSetting('catboxUserhash', value);
-                        showSaveIndicator(hashInput);
-                        errorContainer.style.display = 'none';
-                    } else {
-                        updateStatus('invalid', 'Userhash inválido');
-                        errorContainer.innerText = `❌ ${result.error || 'Falha na validação. Verifique se o userhash está correto.'}`;
-                        errorContainer.style.display = 'block';
-                        // Não salva se a validação falhou
+                if (result.valid) {
+                    let chatTitleInfo = '';
+                    if (groupId) {
+                        const chatRes = await validateTelegramChat(token, groupId);
+                        if (chatRes.valid) chatTitleInfo = chatRes.title;
                     }
-                }, 1500);
+
+                    const chatTitleEl = document.getElementById('pinboard-chat-title');
+                    if (chatTitleEl) chatTitleEl.innerText = chatTitleInfo;
+
+                    saveSetting('telegramToken', token);
+                    if (groupId) saveSetting('telegramChatId', groupId);
+                    updateStatus('valid', `Conectado: @${result.botName} ✓`);
+                    tokenInput.style.borderColor = '#22c55e';
+                    showSaveIndicator(tokenInput);
+                } else {
+                    updateStatus('invalid', 'Token inválido');
+                    tokenError.innerText = `❌ ${result.error || 'Falha na validação'}`;
+                    tokenError.style.display = 'block';
+                    tokenInput.style.borderColor = '#ef4444';
+                }
+            };
+            verifyRow.appendChild(verifyBtn);
+            content.appendChild(verifyRow);
+
+            // Salvar chat ID ao mudar
+            groupInput.onchange = () => {
+                const val = groupInput.value.trim();
+                if (val) {
+                    saveSetting('telegramChatId', val);
+                    showSaveIndicator(groupInput);
+                }
             };
 
-            albumInput.onchange = () => {
-                saveSetting('catboxAlbumShort', albumInput.value.trim());
-                showSaveIndicator(albumInput);
+            // Toggle backup automático
+            const autoRow = document.createElement('div');
+            autoRow.style = 'display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #15181c; border-radius: 8px; margin-top: 2px;';
+            autoRow.innerHTML = '<div><span style="color: white; font-size: 13px;">Backup automático</span><br><span style="color: #666; font-size: 11px;">Envia imagens ao salvar bookmark</span></div>';
+
+            const autoToggle = document.createElement('button');
+            let isOn = settings.telegramAutoBackup;
+            autoToggle.innerHTML = isOn ? 'On' : 'Off';
+
+            // Toggle formato de upload
+            const formatRow = document.createElement('div');
+            formatRow.style = 'margin-top: 15px; margin-bottom: 5px;';
+            formatRow.innerHTML = `
+                <label style="display: flex; align-items: center; gap: 6px; color: white; font-size: 13px; margin-bottom: 6px;">
+                    Modo de Envio 
+                    <span title="Caso haja compressão na imagem ao ler fotos longas, o envio como documento garante zero compressão adicional e tamanho exato daquele download em cache." style="cursor: help; color: #888; border: 1px solid #444; border-radius: 50%; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px;">?</span>
+                </label>
+            `;
+
+            const formatSelect = document.createElement('select');
+            formatSelect.innerHTML = `
+                <option value="document">Documento (Original / Sem restrições)</option>
+                <option value="photo">Foto (Pode haver compressão)</option>
+                <option value="both">Ambos (Pesa 2x no chat)</option>
+            `;
+            formatSelect.value = settings.telegramUploadMode || 'document';
+            formatSelect.style = `
+                width: 100%; padding: 8px 10px; border-radius: 8px;
+                border: 1px solid #333; background: #15181c; color: white;
+                font-size: 12px; cursor: pointer; outline: none;
+            `;
+            formatSelect.onchange = (e) => saveSetting('telegramUploadMode', e.target.value);
+
+            formatRow.appendChild(formatSelect);
+            content.appendChild(formatRow);
+            autoToggle.style = `padding: 8px 18px; border-radius: 20px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: ${isOn ? '#1d9bf0' : '#333'}; color: ${isOn ? 'white' : '#888'}; transition: all 0.2s;`;
+
+            autoToggle.onclick = () => {
+                isOn = !isOn;
+                saveSetting('telegramAutoBackup', isOn);
+                autoToggle.innerHTML = isOn ? 'On' : 'Off';
+                autoToggle.style.background = isOn ? '#1d9bf0' : '#333';
+                autoToggle.style.color = isOn ? 'white' : '#888';
             };
+            autoRow.appendChild(autoToggle);
+            content.appendChild(autoRow);
 
-            // Tooltip sobre userhash
-            const hint = document.createElement('div');
-            hint.innerHTML = '💡 <span style="color: #555;">Sem userhash: upload anônimo. Com userhash: gerencie/delete uploads na sua conta Catbox.</span>';
-            hint.style = 'font-size: 11px; color: #666; margin-top: 8px;';
-
-            // Selective Backup - Filtro de tags
+            // Filtro de tags
             const filterRow = document.createElement('div');
             filterRow.style = 'margin-top: 12px; padding-top: 12px; border-top: 1px solid #2a2a2a;';
             filterRow.innerHTML = '<label style="display: block; color: #888; font-size: 11px; margin-bottom: 4px;">Filtro de Tags <span style="color: #555;">(opcional)</span></label>';
@@ -2266,7 +2200,7 @@
             filterTagsContainer.style = 'display: flex; flex-wrap: wrap; gap: 6px;';
 
             const allTags = getTags();
-            const selectedFilterTags = new Set(settings.catboxFilterTags || []);
+            const selectedFilterTags = new Set(settings.telegramFilterTags || []);
 
             if (allTags.length === 0) {
                 const noTagsMsg = document.createElement('span');
@@ -2294,23 +2228,23 @@
                             tagChip.style.background = '#22c55e';
                             tagChip.style.color = 'white';
                         }
-                        saveSetting('catboxFilterTags', Array.from(selectedFilterTags));
+                        saveSetting('telegramFilterTags', Array.from(selectedFilterTags));
                     };
                     filterTagsContainer.appendChild(tagChip);
                 });
             }
 
             filterRow.appendChild(filterTagsContainer);
-
-            autoRow.appendChild(autoToggle);
-            hashRow.appendChild(hashInputWrapper);
-            hashRow.appendChild(errorContainer);
-            albumRow.appendChild(albumInput);
-            content.appendChild(autoRow);
-            content.appendChild(hashRow);
-            content.appendChild(albumRow);
-            content.appendChild(hint);
             content.appendChild(filterRow);
+
+            const routesBtn = document.createElement('button');
+            routesBtn.innerHTML = `<span>Configurar Rotas de Tópicos</span>`;
+            routesBtn.style = 'margin-top: 15px; width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid #3d8bd9; background: rgba(29, 155, 240, 0.1); color: #1d9bf0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; transition: all 0.2s;';
+            routesBtn.onmouseenter = () => { routesBtn.style.background = 'rgba(29, 155, 240, 0.2)'; };
+            routesBtn.onmouseleave = () => { routesBtn.style.background = 'rgba(29, 155, 240, 0.1)'; };
+            routesBtn.onclick = () => TelegramRoutesModal();
+            content.appendChild(routesBtn);
+
         }));
 
         // === SEÇÃO 4: AUTOMAÇÃO ===
@@ -2328,72 +2262,6 @@
         const ICON_CODE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
         settingsContainer.appendChild(createCollapsibleSection('developer', ICON_CODE, 'Desenvolvedor', (content) => {
             content.appendChild(createToggleRow('Modo Debug', 'Mostra logs detalhados no console do navegador', 'debugMode'));
-
-            // Botão para verificar links Catbox mortos
-            const checkCatboxRow = document.createElement('div');
-            checkCatboxRow.style = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #2a2a2a;';
-
-            const checkCatboxLabel = document.createElement('div');
-            checkCatboxLabel.innerHTML = `
-                <div style="font-weight: 500; margin-bottom: 2px;">Verificar Links Catbox</div>
-                <div style="font-size: 12px; color: #71767b;">Verifica quais backups do Catbox estão mortos/inacessíveis</div>
-            `;
-
-            const checkCatboxBtn = document.createElement('button');
-            checkCatboxBtn.innerText = 'Verificar';
-            checkCatboxBtn.style = `
-                padding: 8px 16px; border-radius: 20px;
-                background: #667292; border: none;
-                color: white; cursor: pointer; font-size: 13px;
-                transition: all 0.2s ease;
-            `;
-            checkCatboxBtn.onmouseenter = () => checkCatboxBtn.style.background = '#778399';
-            checkCatboxBtn.onmouseleave = () => checkCatboxBtn.style.background = '#667292';
-            checkCatboxBtn.onclick = () => {
-                overlay.remove();
-                checkDeadCatboxLinks();
-            };
-
-            checkCatboxRow.appendChild(checkCatboxLabel);
-            checkCatboxRow.appendChild(checkCatboxBtn);
-            content.appendChild(checkCatboxRow);
-
-            // Botão Ver Último Relatório
-            const lastReport = GM_getValue(DEAD_REPORT_KEY, null);
-            if (lastReport) {
-                const viewReportRow = document.createElement('div');
-                viewReportRow.style = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 0;';
-
-                const viewReportLabel = document.createElement('div');
-                viewReportLabel.innerHTML = `
-                    <div style="font-weight: 500; margin-bottom: 2px;">Último Relatório</div>
-                    <div style="font-size: 11px; color: #71767b;">Gerado em: ${new Date(lastReport.timestamp).toLocaleString()}</div>
-                `;
-
-                const viewReportBtn = document.createElement('button');
-                viewReportBtn.innerText = 'Ver Relatório';
-                viewReportBtn.style = `
-                    padding: 6px 12px; border-radius: 20px;
-                    background: transparent; border: 1px solid #333;
-                    color: #e7e9ea; cursor: pointer; font-size: 12px;
-                    transition: all 0.2s ease;
-                `;
-                viewReportBtn.onmouseenter = () => viewReportBtn.style.background = '#ffffff11';
-                viewReportBtn.onmouseleave = () => viewReportBtn.style.background = 'transparent';
-                viewReportBtn.onclick = () => {
-                    const freshReport = GM_getValue(DEAD_REPORT_KEY, null);
-                    if (freshReport) {
-                        const safeDeadLinks = Array.isArray(freshReport.deadLinks) ? freshReport.deadLinks : [];
-                        const safeTotalChecked = Number.isFinite(freshReport.totalChecked) ? freshReport.totalChecked : safeDeadLinks.length;
-                        overlay.remove();
-                        showDeadLinksReport(safeDeadLinks, safeTotalChecked);
-                    }
-                };
-
-                viewReportRow.appendChild(viewReportLabel);
-                viewReportRow.appendChild(viewReportBtn);
-                content.appendChild(viewReportRow);
-            }
         }));
 
         modal.appendChild(settingsContainer);
@@ -2402,7 +2270,10 @@
         overlay.onclick = (e) => {
             if (e.target === overlay) {
                 overlay.remove();
-                if (onSave) onSave();
+                if (onSave) {
+                    // Executa onSave assincronamente pra não travar o fechamento visual da UI
+                    setTimeout(onSave, 10);
+                }
             }
         };
         document.body.appendChild(overlay);
@@ -2411,13 +2282,13 @@
     // ==================== AUTOTAG MODAL ====================
     function AutotagModal() {
         // Evitar múltiplos modais
-        if (document.getElementById('x-bookmark-autotag-overlay')) return;
+        if (document.getElementById('pinboard-autotag-overlay')) return;
 
         const overlay = document.createElement('div');
-        overlay.id = 'x-bookmark-autotag-overlay';
+        overlay.id = 'pinboard-autotag-overlay';
         overlay.style = `
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); z-index: 10002;
+            background: rgba(0, 0, 0, 0.85); z-index: 10002;
             display: flex; justify-content: center; align-items: center;
             animation: fadeIn 0.2s ease;
         `;
@@ -2461,7 +2332,7 @@
             width: 550px; max-width: 95%; max-height: 85vh;
             color: white; border: 1px solid #2a2a2a;
             position: relative; overflow: hidden;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             animation: slideUp 0.3s ease;
         `;
 
@@ -2470,7 +2341,7 @@
         header.style = `
             padding: 25px 25px 20px 25px;
             border-bottom: 1px solid #2a2a2a;
-            background: linear-gradient(180deg, rgba(29,155,240,0.1) 0%, transparent 100%);
+            background: linear-gradient(180deg, rgba(29, 155, 240, 0.1) 0%, transparent 100%);
         `;
 
         const headerTop = document.createElement('div');
@@ -2487,7 +2358,7 @@
             width: 44px; height: 44px; border-radius: 12px;
             background: linear-gradient(135deg, #1d9bf0 0%, #0d8bd9 100%);
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 4px 12px rgba(29,155,240,0.3);
+            box-shadow: 0 4px 12px rgba(29, 155, 240, 0.3);
         `;
 
         const title = document.createElement('h3');
@@ -2509,7 +2380,7 @@
         const closeX = document.createElement('button');
         closeX.innerHTML = ICON_X.replace('width="16"', 'width="20"').replace('height="16"', 'height="20"');
         closeX.style = `
-            background: rgba(255,255,255,0.05); border: none; color: #666;
+            background: rgba(255, 255, 255, 0.05); border: none; color: #666;
             cursor: pointer; padding: 10px; border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
             transition: all 0.2s;
@@ -2572,7 +2443,7 @@
             position: absolute; top: calc(100% + 4px); left: 0; right: 0;
             background: #1e2126; border: 1px solid #333; border-radius: 12px;
             max-height: 200px; overflow-y: auto; overflow-x: hidden; z-index: 10005;
-            display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            display: none; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         `;
 
         // Lista de usernames existentes
@@ -2698,7 +2569,7 @@
             position: absolute; top: calc(100% + 4px); left: 0; right: 0;
             background: #1e2126; border: 1px solid #333; border-radius: 12px;
             max-height: 180px; overflow-y: auto; z-index: 10005;
-            display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            display: none; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         `;
 
         function renderTagChips() {
@@ -2723,7 +2594,7 @@
                 const removeBtn = document.createElement('button');
                 removeBtn.innerHTML = '×';
                 removeBtn.style = `
-                    background: none; border: none; color: rgba(255,255,255,0.7);
+                    background: none; border: none; color: rgba(255, 255, 255, 0.7);
                     cursor: pointer; font-size: 14px; padding: 0 2px;
                     display: flex; align-items: center;
                 `;
@@ -2774,7 +2645,7 @@
 
                 const checkIcon = document.createElement('span');
                 checkIcon.innerHTML = isSelected
-                    ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d9bf0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d9bf0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>`
                     : '';
                 checkIcon.style = 'display: flex; align-items: center;';
 
@@ -2832,7 +2703,7 @@
             border-radius: 12px; cursor: pointer; font-size: 20px;
             display: flex; align-items: center; justify-content: center;
             transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 12px rgba(29,155,240,0.3);
+            box-shadow: 0 4px 12px rgba(29, 155, 240, 0.3);
         `;
         addRuleBtn.onmouseenter = () => { addRuleBtn.style.transform = 'scale(1.05)'; addRuleBtn.style.boxShadow = '0 6px 16px rgba(29,155,240,0.4)'; };
         addRuleBtn.onmouseleave = () => { addRuleBtn.style.transform = 'scale(1)'; addRuleBtn.style.boxShadow = '0 4px 12px rgba(29,155,240,0.3)'; };
@@ -2873,7 +2744,7 @@
             selectedTags.clear();
             renderTagChips();
             renderRules();
-            showToast(`${addedCount} regra${addedCount > 1 ? 's' : ''} adicionada${addedCount > 1 ? 's' : ''} para ${formattedUsername}`);
+            showToast(`${addedCount} regra${addedCount > 1 ? 's' : ''} adicionada${addedCount > 1 ? 's' : ''} para ${formattedUsername} `);
         };
 
         // Enter para adicionar
@@ -2935,7 +2806,7 @@
                     <div style="font-size: 40px; margin-bottom: 12px;">📋</div>
                     <div style="color: #666; font-size: 14px;">Nenhuma regra configurada</div>
                     <div style="color: #555; font-size: 12px; margin-top: 4px;">Adicione sua primeira regra acima</div>
-                `;
+            `;
                 rulesContainer.appendChild(emptyState);
                 return;
             }
@@ -3011,7 +2882,7 @@
                         allRules.splice(ruleData.originalIndex, 1);
                         saveAutotagRules(allRules);
                         renderRules();
-                        showToast(`Regra removida: ${username} → ${ruleData.tag}`);
+                        showToast(`Regra removida: ${username} → ${ruleData.tag} `);
                     };
 
                     tagChip.appendChild(tagText);
@@ -3071,12 +2942,284 @@
         document.body.appendChild(overlay);
     }
 
+    const TAG_FAVORITES = '__FAVORITES__';
+
+    // ==================== TELEGRAM ROUTES MODAL ====================
+    function TelegramRoutesModal() {
+        if (document.getElementById('pinboard-telegram-routes-overlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'pinboard-telegram-routes-overlay';
+        overlay.style = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85); z-index: 10002;
+            display: flex; justify-content: center; align-items: center;
+            animation: fadeIn 0.2s ease;
+        `;
+
+        if (!document.getElementById('telegram-routes-styles')) {
+            const style = document.createElement('style');
+            style.id = 'telegram-routes-styles';
+            style.textContent = `
+                .tg-route-card:hover { border-color: #444 !important; background: #252525 !important; }
+                .tg-route-card .remove-btn { opacity: 0; transition: opacity 0.2s; }
+                .tg-route-card:hover .remove-btn { opacity: 1; }
+                input[type="number"]::-webkit-outer-spin-button,
+                input[type="number"]::-webkit-inner-spin-button {
+                    -webkit-appearance: none;
+                    margin: 0;
+                }
+                input[type="number"] {
+                    -moz-appearance: textfield;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        const modal = document.createElement('div');
+        modal.style = `
+            background: linear-gradient(145deg, #15181c 0%, #1a1d21 100%);
+            padding: 0; border-radius: 20px; width: 550px; max-width: 95%; max-height: 85vh;
+            color: white; border: 1px solid #2a2a2a; position: relative; overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); animation: slideUp 0.3s ease; display:flex; flex-direction:column;
+        `;
+
+        const header = document.createElement('div');
+        header.style = 'padding: 25px 25px 20px 25px; border-bottom: 1px solid #2a2a2a; background: linear-gradient(180deg, rgba(29, 155, 240, 0.1) 0%, transparent 100%); display:flex; justify-content:space-between; align-items:flex-start;';
+
+        const titleSection = document.createElement('div');
+        const titleRow = document.createElement('div');
+        titleRow.style = 'display: flex; align-items: center; gap: 12px; margin-bottom: 8px;';
+        const iconCircle = document.createElement('div');
+        iconCircle.innerHTML = ICON_TELEGRAM.replace('width="22"', 'width="24"').replace('height="22"', 'height="24"');
+        iconCircle.style = `width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #1d9bf0 0%, #0d8bd9 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(29, 155, 240, 0.3);`;
+        const title = document.createElement('h3');
+        title.innerText = 'Roteamento de Tópicos';
+        title.style = 'margin: 0; color: white; font-size: 22px; font-weight: 600;';
+        titleRow.appendChild(iconCircle); titleRow.appendChild(title);
+        titleSection.appendChild(titleRow);
+
+        const subtitle = document.createElement('p');
+        subtitle.innerText = 'Envie imagens automaticamente para diferentes chats ou tópicos baseados em Tags ou Favoritos.';
+        subtitle.style = 'margin: 0; color: #666; font-size: 13px; margin-left: 56px; line-height:1.4;';
+        titleSection.appendChild(subtitle);
+        header.appendChild(titleSection);
+
+        const closeX = document.createElement('button');
+        closeX.innerHTML = ICON_X.replace('width="16"', 'width="20"').replace('height="16"', 'height="20"');
+        closeX.style = `background: rgba(255, 255, 255, 0.05); border: none; color: #666; cursor: pointer; padding: 10px; border-radius: 10px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;`;
+        closeX.onmouseenter = () => { closeX.style.color = 'white'; closeX.style.background = 'rgba(255,255,255,0.1)'; };
+        closeX.onmouseleave = () => { closeX.style.color = '#666'; closeX.style.background = 'rgba(255,255,255,0.05)'; };
+        closeX.onclick = () => overlay.remove();
+        header.appendChild(closeX);
+        modal.appendChild(header);
+
+        const body = document.createElement('div');
+        body.style = 'padding: 25px; overflow-y: auto; flex:1;';
+
+        const addSection = document.createElement('div');
+        addSection.style = 'background: #1e2126; border-radius: 16px; padding: 20px; margin-bottom: 25px; border: 1px solid #2a2a2a; margin-top: 5px;';
+
+        const topRow = document.createElement('div');
+        topRow.style = 'display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; margin-bottom: 12px; width: 100%;';
+
+        const bottomRow = document.createElement('div');
+        bottomRow.style = 'display: flex; gap: 12px; align-items: stretch; margin-bottom: 12px; width: 100%;';
+
+        const tagSelectWrapper = document.createElement('div');
+        tagSelectWrapper.style = 'position: relative;';
+        const tagSelect = document.createElement('select');
+        tagSelect.style = `width: 100%; padding: 14px 16px; border-radius: 12px; border: 1px solid #333; background: #2d2d2d; color: white; font-size: 14px; transition: border-color 0.2s; box-sizing: border-box; appearance: none; cursor:pointer;`;
+
+        let selectHtml = `<option value="" disabled selected>Escolha o Gatilho...</option><option value="${TAG_FAVORITES}">⭐ Favoritos</option>`;
+        getTags().forEach(t => selectHtml += `<option value="${t}">🏷️ ${t}</option>`);
+        tagSelect.innerHTML = selectHtml;
+        tagSelectWrapper.appendChild(tagSelect);
+
+        // Chevron para o select para parecer customizado
+        const selectChevron = document.createElement('div');
+        selectChevron.innerHTML = ICON_CHEVRON_DOWN;
+        selectChevron.style = 'position:absolute; right:15px; top:15px; pointer-events:none; color:#666;';
+        tagSelectWrapper.appendChild(selectChevron);
+
+        const topicInputWrapper = document.createElement('div');
+        topicInputWrapper.style = 'position: relative;';
+        const topicInput = document.createElement('input');
+        topicInput.type = 'text';
+        topicInput.inputMode = 'numeric';
+        topicInput.placeholder = 'ID do Tópico';
+        topicInput.style = `flex: 1; width: 100%; height: 100%; padding: 14px 16px; border-radius: 12px; border: 1px solid #333; background: #2d2d2d; color: white; font-size: 14px; font-family:monospace; box-sizing: border-box;`;
+        topicInputWrapper.appendChild(topicInput);
+
+        const helpIcon = document.createElement('span');
+        helpIcon.innerHTML = '?';
+        helpIcon.title = 'Para pegar o ID de um Tópico, clique com o botão direito em qualquer mensagem dele no Telegram > Copiar Link. O ID do tópico é o número que vem depois do ID do grupo. Ex: t.me/c/12345/6789 -> O ID do Tópico é 6789.';
+        helpIcon.style = 'position: absolute; right: 10px; top: 13px; cursor: help; color: #888; border: 1px solid #444; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-family: sans-serif; opacity: 0.7; transition: opacity 0.2s; background: #2d2d2d;';
+        helpIcon.onmouseenter = () => helpIcon.style.opacity = '1';
+        helpIcon.onmouseleave = () => helpIcon.style.opacity = '0.7';
+        topicInputWrapper.appendChild(helpIcon);
+
+        const aliasInputWrapper = document.createElement('div');
+        aliasInputWrapper.style = 'flex: 1; position: relative;';
+        const aliasInput = document.createElement('input');
+        aliasInput.type = 'text';
+        aliasInput.placeholder = 'Nome (Opcional)';
+        aliasInput.style = `width: 100%; height: 100%; padding: 14px 16px; border-radius: 12px; border: 1px solid #333; background: #2d2d2d; color: white; font-size: 14px; box-sizing: border-box;`;
+        aliasInputWrapper.appendChild(aliasInput);
+
+        const nameHelpIcon = document.createElement('span');
+        nameHelpIcon.innerHTML = '?';
+        nameHelpIcon.title = 'Apenas um apelido visual (ex: "Pictures") para organizar sua visualização de tópicos nesta lista de regras.';
+        nameHelpIcon.style = 'position: absolute; right: 10px; top: 13px; cursor: help; color: #888; border: 1px solid #444; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-family: sans-serif; opacity: 0.7; transition: opacity 0.2s; background: #2d2d2d;';
+        nameHelpIcon.onmouseenter = () => nameHelpIcon.style.opacity = '1';
+        nameHelpIcon.onmouseleave = () => nameHelpIcon.style.opacity = '0.7';
+        aliasInputWrapper.appendChild(nameHelpIcon);
+
+        const addRuleBtn = document.createElement('button');
+        addRuleBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`;
+        addRuleBtn.style = `background: linear-gradient(135deg, #1d9bf0 0%, #0d8bd9 100%); border: none; color: white; width: 48px; min-width: 48px; height: 48px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(29, 155, 240, 0.3); transition: transform 0.2s;`;
+        addRuleBtn.onmouseenter = () => { addRuleBtn.style.transform = 'scale(1.05)'; };
+        addRuleBtn.onmouseleave = () => { addRuleBtn.style.transform = 'scale(1)'; };
+
+        topRow.appendChild(tagSelectWrapper);
+        topRow.appendChild(topicInputWrapper);
+
+        bottomRow.appendChild(aliasInputWrapper);
+        bottomRow.appendChild(addRuleBtn);
+
+        addSection.appendChild(topRow);
+        addSection.appendChild(bottomRow);
+
+        const optionsRow = document.createElement('div');
+        optionsRow.style = 'display:flex; gap:15px; align-items:center;';
+
+        const copyGeneralLabel = document.createElement('label');
+        copyGeneralLabel.style = 'display:flex; align-items:center; gap:8px; color:#aaa; font-size:13px; cursor:pointer; user-select:none;';
+        const copyGeneralCheck = document.createElement('input');
+        copyGeneralCheck.type = 'checkbox';
+        copyGeneralCheck.checked = true; // Por padrão, mantém no geral
+        copyGeneralCheck.style = 'accent-color: #1d9bf0; width:16px; height:16px; cursor:pointer;';
+        copyGeneralLabel.appendChild(copyGeneralCheck);
+        copyGeneralLabel.appendChild(document.createTextNode('Enviar também para o Chat Geral'));
+        optionsRow.appendChild(copyGeneralLabel);
+        addSection.appendChild(optionsRow);
+
+        body.appendChild(addSection);
+
+        const rulesTitleRow = document.createElement('div');
+        rulesTitleRow.style = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;';
+        const rulesTitle = document.createElement('div');
+        rulesTitle.innerText = 'Rotas Configuradas';
+        rulesTitle.style = 'color: white; font-size: 14px; font-weight: 500;';
+        const rulesCount = document.createElement('span');
+        rulesCount.style = `background: #2d2d2d; color: #888; padding: 4px 10px; border-radius: 20px; font-size: 12px;`;
+        rulesTitleRow.appendChild(rulesTitle); rulesTitleRow.appendChild(rulesCount);
+        body.appendChild(rulesTitleRow);
+
+        const rulesList = document.createElement('div');
+        rulesList.style = 'display: flex; flex-direction: column; gap: 8px;';
+
+        function renderRules() {
+            rulesList.innerHTML = '';
+            const routes = getTelegramRoutes();
+            rulesCount.innerText = routes.length + ' rota' + (routes.length !== 1 ? 's' : '');
+
+            if (routes.length === 0) {
+                rulesList.innerHTML = `<div style="text-align:center; padding:30px 20px; background:#1e2126; border-radius:16px; border:1px dashed #333; color:#666; font-size:13px;">Nenhuma rota configurada</div>`;
+                return;
+            }
+
+            routes.forEach((route, idx) => {
+                const card = document.createElement('div');
+                card.className = 'tg-route-card';
+                card.style = `background: #1e2126; border-radius: 12px; padding: 12px 16px; border: 1px solid #2a2a2a; display:flex; align-items:center; gap:15px; animation: fadeIn 0.3s ease;`;
+
+                const tagIcon = document.createElement('div');
+                tagIcon.innerHTML = route.tag === TAG_FAVORITES ? '⭐' : '🏷️';
+                tagIcon.style = 'font-size: 18px; width:36px; height:36px; border-radius:10px; background:#2d2d2d; display:flex; align-items:center; justify-content:center;';
+
+                const infoCol = document.createElement('div');
+                infoCol.style = 'flex:1; display:flex; flex-direction:column; gap:4px;';
+
+                const tagEl = document.createElement('div');
+                tagEl.innerText = route.tag === TAG_FAVORITES ? 'Favoritos' : route.tag;
+                tagEl.style = 'color: #1d9bf0; font-size: 14.5px; font-weight: 500;';
+                infoCol.appendChild(tagEl);
+
+                const detailRow = document.createElement('div');
+                detailRow.style = 'display:flex; gap:10px; align-items:center;';
+
+                const topicEl = document.createElement('div');
+                const displayName = route.topicName ? `${route.topicName} <span style="color:#666;">(ID: ${route.topicId})</span>` : `Tópico: <span style="font-family:monospace; color:#ccc;">${route.topicId}</span>`;
+                topicEl.innerHTML = displayName;
+                topicEl.style = 'color:#aaa; font-size:12px; background:#2a2a2a; padding:3px 8px; border-radius:6px;';
+                detailRow.appendChild(topicEl);
+
+                if (route.copyToGeneral) {
+                    const copyBadge = document.createElement('div');
+                    copyBadge.innerText = '+ Geral';
+                    copyBadge.style = 'color:#22c55e; font-size:11px; font-weight:600; background:rgba(34, 197, 94, 0.1); padding:2px 8px; border-radius:6px;';
+                    detailRow.appendChild(copyBadge);
+                }
+                infoCol.appendChild(detailRow);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-btn';
+                removeBtn.innerHTML = ICON_TRASH;
+                removeBtn.title = 'Remover Rota';
+                removeBtn.style = `background: transparent; border: none; color: #666; padding: 8px; cursor: pointer; display: flex; transition: color 0.2s;`;
+                removeBtn.onmouseenter = () => removeBtn.style.color = '#e74c3c';
+                removeBtn.onmouseleave = () => removeBtn.style.color = '#666';
+                removeBtn.onclick = () => {
+                    const updated = getTelegramRoutes();
+                    updated.splice(idx, 1);
+                    saveTelegramRoutes(updated);
+                    renderRules();
+                };
+
+                card.appendChild(tagIcon); card.appendChild(infoCol); card.appendChild(removeBtn);
+                rulesList.appendChild(card);
+            });
+        }
+
+        addRuleBtn.onclick = () => {
+            const tag = tagSelect.value;
+            const topicId = topicInput.value.trim();
+            const topicAlias = aliasInput.value.trim();
+            const copyGeneral = copyGeneralCheck.checked;
+
+            if (!tag) return showToast('Selecione um gatilho');
+            if (!topicId) return showToast('Digite o ID do Tópico');
+
+            const routes = getTelegramRoutes();
+            if (routes.some(r => r.tag === tag && r.topicId === topicId)) {
+                return showToast('Essa rota já existe!');
+            }
+
+            routes.push({ tag, topicId, topicName: topicAlias || null, copyToGeneral: copyGeneral });
+            saveTelegramRoutes(routes);
+            topicInput.value = '';
+            aliasInput.value = '';
+            tagSelect.value = '';
+            renderRules();
+            showToast('Rota adicionada com sucesso');
+        };
+
+        renderRules();
+        body.appendChild(rulesList);
+        modal.appendChild(body);
+        overlay.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        document.body.appendChild(overlay);
+    }
+
+
     // ==================== UI INJECTION ====================
     function injectButtons() {
-        const grokButtons = document.querySelectorAll('button[aria-label="Ações do Grok"]:not([data-x-bookmark-injected])');
+        const grokButtons = document.querySelectorAll('button[aria-label="Ações do Grok"]:not([data-pinboard-injected])');
 
         grokButtons.forEach(button => {
-            button.setAttribute('data-x-bookmark-injected', 'true');
+            button.setAttribute('data-pinboard-injected', 'true');
 
             const article = button.closest('article');
             if (!article) return;
@@ -3210,9 +3353,9 @@
                 if (result.action === 'added') {
                     showBookmarkToast('Adicionado aos itens salvos', true);
 
-                    // Backup automático no Catbox se configurado
+                    // Backup automático no Telegram se configurado
                     const settings = getSettings();
-                    if (settings.catboxAutoBackup && result.bookmarkId) {
+                    if (settings.telegramAutoBackup && settings.telegramToken && settings.telegramChatId && result.bookmarkId) {
                         backupBookmarkImages(result.bookmarkId);
                     }
                 } else {
@@ -3235,7 +3378,7 @@
         // Travar scroll da página
         document.body.style.overflow = 'hidden';
 
-        const existing = document.getElementById('x-bookmark-gallery');
+        const existing = document.getElementById('pinboard-gallery');
         if (existing) {
             existing.style.display = 'flex';
             updateGalleryContent();
@@ -3248,7 +3391,7 @@
         }
 
         const modal = document.createElement('div');
-        modal.id = 'x-bookmark-gallery';
+        modal.id = 'pinboard-gallery';
         modal.style = `
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.95); z-index: 9999;
@@ -3259,20 +3402,20 @@
 
         // Header
         const header = document.createElement('div');
-        header.id = 'x-bookmark-header';
+        header.id = 'pinboard-header';
         header.style = 'width: 100%; max-width: 1200px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;';
 
         const titleArea = document.createElement('div');
         titleArea.style = 'display: flex; align-items: center; gap: 10px;';
 
         const title = document.createElement('h2');
-        title.id = 'x-bookmark-title';
+        title.id = 'pinboard-title';
         title.style = 'margin: 0; font-size: 24px; color: #1d9bf0;';
         title.innerText = getSettings().galleryTitle;
         titleArea.appendChild(title);
 
         const counter = document.createElement('span');
-        counter.id = 'x-bookmark-counter';
+        counter.id = 'pinboard-counter';
         counter.style = 'background: #1d9bf0; color: white; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: bold;';
         counter.innerText = getBookmarks().length;
         titleArea.appendChild(counter);
@@ -3297,7 +3440,7 @@
 
         // Toolbar (Busca + Ordenação + Tags)
         const toolbar = document.createElement('div');
-        toolbar.id = 'x-bookmark-toolbar';
+        toolbar.id = 'pinboard-toolbar';
         toolbar.style = 'width: 100%; max-width: 1200px; display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #333;';
 
         // Busca
@@ -3355,7 +3498,7 @@
 
         // Toggle Grid/Lista
         const viewToggle = document.createElement('button');
-        viewToggle.id = 'x-bookmark-view-toggle';
+        viewToggle.id = 'pinboard-view-toggle';
         viewToggle.innerHTML = viewMode === 'grid' ? `${ICON_LIST} <span>Lista</span>` : `${ICON_GRID} <span>Grid</span>`;
         viewToggle.style = 'padding: 10px 20px; border-radius: 20px; border: 1px solid #333; background: #222; color: rgba(255,255,255,0.7); cursor: pointer; display: flex; align-items: center; gap: 6px;';
         viewToggle.onclick = () => {
@@ -3368,17 +3511,17 @@
 
         // Bulk Actions Container
         const bulkContainer = document.createElement('div');
-        bulkContainer.id = 'x-bookmark-bulk-actions';
+        bulkContainer.id = 'pinboard-bulk-actions';
         bulkContainer.style = 'display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10001; align-items: center; flex-wrap: wrap; justify-content: center; gap: 10px; width: max-content; max-width: calc(100vw - 24px); padding: 10px 12px; border-radius: 16px; border: 1px solid #2f2f2f; background: rgba(18,18,18,0.92); backdrop-filter: blur(8px); box-shadow: 0 10px 26px rgba(0,0,0,0.45);';
 
         const bulkInfo = document.createElement('span');
-        bulkInfo.id = 'x-bookmark-bulk-info';
+        bulkInfo.id = 'pinboard-bulk-info';
         bulkInfo.style = 'color: #888; font-size: 13px;';
         bulkInfo.innerText = '0 selecionados';
 
         // Botão Selecionar Tudo - azul
         const bulkSelectAllBtn = document.createElement('button');
-        bulkSelectAllBtn.id = 'x-bookmark-select-all';
+        bulkSelectAllBtn.id = 'pinboard-select-all';
         bulkSelectAllBtn.innerHTML = `<span>Selecionar Tudo</span>`;
         bulkSelectAllBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #1d9bf0; background: transparent; color: #1d9bf0; cursor: pointer; display: flex; align-items: center; gap: 6px;';
         bulkSelectAllBtn.onclick = () => {
@@ -3411,7 +3554,7 @@
 
         // Botão Favoritar - amarelo
         const bulkFavoriteBtn = document.createElement('button');
-        bulkFavoriteBtn.id = 'x-bookmark-bulk-favorite';
+        bulkFavoriteBtn.id = 'pinboard-bulk-favorite';
         bulkFavoriteBtn.innerHTML = `${ICON_STAR} <span>Favoritar</span>`;
         bulkFavoriteBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #f59e0b; background: transparent; color: #f59e0b; cursor: pointer; display: flex; align-items: center; gap: 6px;';
         bulkFavoriteBtn.onclick = bulkFavorite;
@@ -3422,44 +3565,70 @@
         bulkDownloadBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #22c55e; background: transparent; color: #22c55e; cursor: pointer; display: flex; align-items: center; gap: 6px;';
         bulkDownloadBtn.onclick = downloadSelectedItems;
 
-        // Botão Backup - roxo/catbox
+        // Botão Backup - Telegram
         const bulkBackupBtn = document.createElement('button');
-        bulkBackupBtn.innerHTML = `${ICON_CATBOX} <span>Backup</span>`;
-        bulkBackupBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #667292; background: transparent; color: #667292; cursor: pointer; display: flex; align-items: center; gap: 6px;';
+        bulkBackupBtn.innerHTML = `${ICON_TELEGRAM} <span>Backup</span>`;
+        bulkBackupBtn.style = 'padding: 8px 15px; border-radius: 20px; border: 1px solid #2196f3; background: transparent; color: #2196f3; cursor: pointer; display: flex; align-items: center; gap: 6px;';
         bulkBackupBtn.onclick = async () => {
             if (selectedItems.size === 0) {
                 showToast('Nenhum item selecionado');
                 return;
             }
             const settings = getSettings();
-            if (!settings.catboxUserhash) {
-                showToast('Configure o Userhash do Catbox primeiro');
+            if (!settings.telegramToken || !settings.telegramChatId) {
+                showToast('Configure o Token e Chat ID do Telegram primeiro');
                 return;
             }
 
-            // Calcular total de imagens para progresso
+            // Calcular total de imagens para progresso e checar duplicatas
             const allBookmarks = getBookmarks();
             let totalImages = 0;
+            let hasDuplicates = false;
             const idsArray = [...selectedItems];
             for (const id of idsArray) {
                 const bm = allBookmarks.find(b => b.id === id);
                 if (bm?.images) {
+                    const oldTelegramUrls = bm.telegramUrls || [];
+                    const bmHasTgBackup = oldTelegramUrls.some(u => u && (u.startsWith('tg:') || u.startsWith('https://')));
+                    if (bmHasTgBackup) hasDuplicates = true;
+
                     if (bm.mergedImageUrl && bm.mergedImageUrl.startsWith('https://')) {
                         continue;
                     }
 
                     // Contar apenas imagens sem backup
-                    const needsBackup = bm.images.filter((_, idx) =>
-                        !(bm.catboxUrls?.[idx]?.startsWith('https://'))
-                    ).length;
+                    const needsBackup = bm.images.filter((_, idx) => {
+                        const tgUrl = bm.telegramUrls?.[idx];
+                        return !(tgUrl && (tgUrl.startsWith('tg:') || tgUrl.startsWith('https://')));
+                    }).length;
                     totalImages += needsBackup;
                 }
             }
 
-            if (totalImages === 0) {
+            if (totalImages === 0 && !hasDuplicates) {
                 const count = selectedItems.size;
                 showToast(count === 1 ? 'Este item já tem backup!' : 'Todos os itens já têm backup!');
                 return;
+            }
+
+            if (hasDuplicates) {
+                const modalText = 'Arquivos com backup existente.\\n\\nRe-enviar o backup fará o re-upload de todas as fotos para pegar os IDs corretos. Esteja ciente que isso NÃO apagará as fotos no telegram por limitação de API, deixando sobras no chat.\\n\\nVocê concorda com isso?';
+                const choice = await showChoiceModal(modalText, [
+                    { label: 'Sim, Re-enviar', value: 'continue', bg: '#f4212e', bold: true },
+                    { label: 'Cancelar', value: 'cancel', bg: '#333' }
+                ]);
+                if (choice !== 'continue') return;
+
+                // Se usuário forçou o re-envio, recalcularemos o totalImages baseando no total de imagens em todos os favoritos com duplicatas,
+                // já que o `backupBookmarkImages(..., { forceUpload: true })` vai re-alocar tudo
+                totalImages = 0;
+                for (const id of idsArray) {
+                    const bm = allBookmarks.find(b => b.id === id);
+                    if (bm?.images) {
+                        if (bm.mergedImageUrl && bm.mergedImageUrl.startsWith('https://')) continue;
+                        totalImages += bm.images.length;
+                    }
+                }
             }
 
             // Objeto mutável para rastrear progresso entre bookmarks
@@ -3467,11 +3636,14 @@
             for (const id of idsArray) {
                 await backupBookmarkImages(id, {
                     isManual: true,
-                    progressInfo
+                    progressInfo,
+                    forceUpload: hasDuplicates
                 });
             }
+            selectedItems.clear();
             showToast('Backup concluído!');
             updateGalleryContent();
+            updateBulkUI();
         };
 
         // Botão Excluir
@@ -3493,13 +3665,13 @@
 
         // Tag filters
         const tagFilters = document.createElement('div');
-        tagFilters.id = 'x-bookmark-tag-filters';
+        tagFilters.id = 'pinboard-tag-filters';
         tagFilters.style = 'width: 100%; max-width: 1200px; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;';
         modal.appendChild(tagFilters);
 
         // Container
         const container = document.createElement('div');
-        container.id = 'x-bookmark-container';
+        container.id = 'pinboard-container';
         container.style = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; width: 100%; max-width: 1200px; align-items: start;';
         modal.appendChild(container);
 
@@ -3511,10 +3683,10 @@
     }
 
     function updateGalleryContent() {
-        const container = document.getElementById('x-bookmark-container');
-        const tagFiltersEl = document.getElementById('x-bookmark-tag-filters');
-        const counterEl = document.getElementById('x-bookmark-counter');
-        const titleEl = document.getElementById('x-bookmark-title');
+        const container = document.getElementById('pinboard-container');
+        const tagFiltersEl = document.getElementById('pinboard-tag-filters');
+        const counterEl = document.getElementById('pinboard-counter');
+        const titleEl = document.getElementById('pinboard-title');
         if (!container) return;
 
         // Atualizar título da galeria
@@ -3624,17 +3796,33 @@
                 const thumb = document.createElement('img');
                 const hasMerged = !!b.mergedImageUrl;
                 const thumbData = hasMerged
-                    ? { url: b.mergedImageUrl, isFallback: false, hasCatboxBackup: true }
+                    ? { url: b.mergedImageUrl, isFallback: false, hasTelegramBackup: true }
                     : getImageUrl(b, 0);
-                thumb.src = thumbData.url || '';
+
+                if (hasMerged && b.mergedImageUrl.startsWith('tg:')) {
+                    thumb.src = '';
+                    getTelegramFileUrl(b.mergedImageUrl.slice(3)).then(u => {
+                        if (u) thumb.src = u;
+                        else thumb.src = getImageUrl(b, 0).url || b.images?.[0] || '';
+                    });
+                } else {
+                    thumb.src = thumbData.url || '';
+                }
+
                 thumb.style = `width: ${previewSize}px; height: ${previewSize}px; object-fit: cover; border-radius: 8px; cursor: pointer; flex-shrink: 0; ${thumbData.isFallback && b.catboxUrls ? 'border: 2px solid #f59e0b;' : ''}`;
                 if (hasMerged) {
                     thumb.title = '🧩 Usando imagem mesclada salva';
                 } else if (thumbData.isFallback && b.catboxUrls) {
                     thumb.title = '⚠️ Usando imagem do Twitter (backup falhou)';
                 }
-                // Fallback chain: 4096x4096 → large → Catbox
+                // Fallback chain: 4096x4096 → large → Telegram
                 thumb.onerror = () => {
+                    thumb.dataset.failedAttempts = thumb.dataset.failedAttempts || '';
+                    if (thumb.dataset.failedAttempts.includes(thumb.src)) {
+                        thumb.onerror = null;
+                        return;
+                    }
+                    thumb.dataset.failedAttempts += thumb.src + '|';
                     if (hasMerged) {
                         const fallbackThumb = getImageUrl(b, 0).url || b.images?.[0];
                         if (fallbackThumb && thumb.src !== fallbackThumb) {
@@ -3644,31 +3832,34 @@
                         }
                     }
 
-                    const catboxUrl = b.catboxUrls?.[0];
+                    const telegramUrl = b.catboxUrls?.[0];
                     const failedUrl = thumb.src;
                     const debugMode = getSettings().debugMode;
 
                     // Se estava usando 4096x4096 e falhou, tentar large
                     if (thumb.src.includes('name=4096x4096')) {
                         if (debugMode) {
-                            console.log('[X-Bookmark] List: 4k failed, trying large | URL:', failedUrl);
+                            console.log('[pinboard] List: 4k failed, trying large | URL:', failedUrl);
                         } else {
-                            console.log('[X-Bookmark] List: 4k failed, trying large');
+                            console.log('[pinboard] List: 4k failed, trying large');
                         }
                         thumb.src = thumb.src.replace('name=4096x4096', 'name=large');
                         return;
                     }
 
-                    // Se large também falhou e temos Catbox, usar Catbox
-                    if (catboxUrl && !thumb.src.includes('catbox.moe')) {
+                    // Se large também falhou: Telegram não é uma URL de imagem pública,
+                    // apenas mostrar aviso visual sem tentar carregar a URL de referência
+                    if (telegramUrl && !thumb.dataset.telegramFallbackShown) {
+                        thumb.dataset.telegramFallbackShown = '1';
                         if (debugMode) {
-                            console.log('[X-Bookmark] List: Large failed, using Catbox | Failed URL:', failedUrl, '| Catbox:', catboxUrl);
+                            console.log('[pinboard] List: Large failed, Twitter unavailable | Backup ref:', telegramUrl);
                         } else {
-                            console.log('[X-Bookmark] List: Large failed, using Catbox');
+                            console.log('[pinboard] List: Large failed, using Telegram backup');
                         }
-                        thumb.src = catboxUrl;
+                        thumb.src = '';
+                        thumb.onerror = null;
                         thumb.style.border = '2px solid #f59e0b';
-                        thumb.title = '⚠️ Usando backup do Catbox (Twitter indisponível)';
+                        thumb.title = '⚠️ Twitter indisponível (backup no Telegram)';
                     }
                 };
                 thumb.onclick = () => (b.images?.length > 1 || b.mergedImageUrl) ? showDetails(b) : window.open(thumbData.url, '_blank');
@@ -3693,7 +3884,7 @@
                 dates.innerHTML = `${ICON_CALENDAR} ${formatDate(b.postDate)} &nbsp;•&nbsp; ${ICON_DOWNLOAD} ${formatDate(b.timestamp)}`;
 
                 const tags = document.createElement('div');
-                tags.style = 'display: flex; gap: 5px; flex-wrap: wrap;';
+                tags.style = 'display: flex; flex-wrap: wrap; gap: 5px;';
                 (b.tags || []).forEach(tag => {
                     const badge = document.createElement('span');
                     badge.innerText = tag;
@@ -3784,7 +3975,8 @@
             let fallbackCount = 0;
 
             for (let i = 0; i < originalNumImgs; i++) {
-                if (b.catboxUrls?.[i]?.startsWith('https://')) {
+                const tgRef = b.telegramUrls?.[i];
+                if (tgRef && (tgRef.startsWith('tg:') || tgRef.startsWith('https://'))) {
                     backupCount++;
                 } else {
                     fallbackCount++;
@@ -3794,16 +3986,32 @@
             displayImages.forEach((src, idx) => {
                 const img = document.createElement('img');
                 const imgData = hasMerged
-                    ? { url: b.mergedImageUrl, hasCatboxBackup: true }
+                    ? { url: b.mergedImageUrl, hasTelegramBackup: true }
                     : getImageUrl(b, idx);
-                img.src = imgData.url;
+
+                if (hasMerged && b.mergedImageUrl.startsWith('tg:')) {
+                    img.src = '';
+                    getTelegramFileUrl(b.mergedImageUrl.slice(3)).then(u => {
+                        if (u) img.src = u;
+                        else img.src = getImageUrl(b, 0).url || b.images?.[0] || '';
+                    }).catch(() => { img.src = getImageUrl(b, 0).url || b.images?.[0] || ''; });
+                } else {
+                    img.src = imgData.url;
+                }
+
                 let itemHeight = `${gridHeight}px`;
                 if (numImgs > 1) {
                     itemHeight = numImgs === 2 ? `${gridHeight}px` : `${Math.floor(gridHeight / 2) - 1}px`;
                 }
                 img.style = `width: 100%; height: ${itemHeight}; object-fit: cover; display: block; pointer-events: none;`;
-                // Fallback chain: 4096x4096 → large → Catbox
+                // Fallback chain: 4096x4096 → large → Telegram
                 img.onerror = () => {
+                    img.dataset.failedAttempts = img.dataset.failedAttempts || '';
+                    if (img.dataset.failedAttempts.includes(img.src)) {
+                        img.onerror = null;
+                        return;
+                    }
+                    img.dataset.failedAttempts += img.src + '|';
                     if (hasMerged) {
                         const fallbackThumb = getImageUrl(b, 0).url || b.images?.[0];
                         if (fallbackThumb && img.src !== fallbackThumb) {
@@ -3813,45 +4021,62 @@
                         }
                     }
 
-                    const catboxUrl = b.catboxUrls?.[idx];
+                    const telegramUrl = b.telegramUrls?.[idx];
                     const failedUrl = img.src;
                     const debugMode = getSettings().debugMode;
 
                     // Se estava usando 4096x4096 e falhou, tentar large
                     if (img.src.includes('name=4096x4096')) {
                         if (debugMode) {
-                            console.log('[X-Bookmark] Grid: 4k failed, trying large | URL:', failedUrl);
+                            console.log('[pinboard] Grid: 4k failed, trying large | URL:', failedUrl);
                         } else {
-                            console.log('[X-Bookmark] Grid: 4k failed, trying large');
+                            console.log('[pinboard] Grid: 4k failed, trying large');
                         }
                         img.src = img.src.replace('name=4096x4096', 'name=large');
                         return;
                     }
 
-                    // Se large também falhou e temos Catbox, usar Catbox
-                    if (catboxUrl && !img.src.includes('catbox.moe')) {
-                        if (debugMode) {
-                            console.log('[X-Bookmark] Grid: Large failed, using Catbox | Failed URL:', failedUrl, '| Catbox:', catboxUrl);
+                    // Se large falhou: resolver Telegram backup async
+                    if (telegramUrl && !img.dataset.telegramFallbackShown) {
+                        img.dataset.telegramFallbackShown = '1';
+                        img.onerror = null;
+
+                        const showWarningBadge = () => {
+                            if (!imgContainer.querySelector('.fallback-badge')) {
+                                const fallbackBadge = document.createElement('div');
+                                fallbackBadge.className = 'fallback-badge main-badge';
+                                fallbackBadge.innerHTML = '⚠️';
+                                fallbackBadge.title = 'Twitter indisponível (usando backup)';
+                                const badgeCount = imgContainer.querySelectorAll('.main-badge, .merge-badge, .favorite-badge').length;
+                                const rightOffset = 10 + (badgeCount * 30);
+                                fallbackBadge.style = `position: absolute; top: 10px; right: ${rightOffset}px; background: rgba(245,158,11,0.95); color: white; padding: 4px 6px; border-radius: 6px; font-size: 12px; z-index: 7;`;
+                                imgContainer.appendChild(fallbackBadge);
+                            }
+                        };
+
+                        const handleFailedBackup = () => {
+                            img.src = '';
+                            item.style.border = '1px solid #f59e0b';
+                            showWarningBadge();
+                        };
+
+                        if (telegramUrl.startsWith('tg:')) {
+                            const fileId = telegramUrl.slice(3);
+                            getTelegramFileUrl(fileId)
+                                .then(url => {
+                                    if (url) {
+                                        img.src = url;
+                                        showWarningBadge(); // Mostra warning que fallback visual engatilhou 
+                                    } else {
+                                        handleFailedBackup();
+                                    }
+                                })
+                                .catch(() => handleFailedBackup());
+                        } else if (telegramUrl.startsWith('https://')) {
+                            img.src = telegramUrl;
+                            showWarningBadge();
                         } else {
-                            console.log('[X-Bookmark] Grid: Large failed, using Catbox');
-                        }
-                        img.src = catboxUrl;
-                        item.style.border = '1px solid #f59e0b';
-                        // Badge de warning
-                        if (!imgContainer.querySelector('.fallback-badge')) {
-                            const fallbackBadge = document.createElement('div');
-                            fallbackBadge.className = 'fallback-badge';
-                            fallbackBadge.innerHTML = '⚠️';
-                            fallbackBadge.title = 'Usando backup do Catbox (Twitter indisponível)';
-                            fallbackBadge.style = 'position: absolute; top: 10px; right: 50px; background: rgba(245,158,11,0.95); color: white; padding: 4px 6px; border-radius: 6px; font-size: 12px; z-index: 7;';
-                            imgContainer.appendChild(fallbackBadge);
-                        }
-                        // Atualizar badge principal para Catbox
-                        const mainBadge = imgContainer.querySelector('.main-badge');
-                        if (mainBadge) {
-                            mainBadge.innerHTML = ICON_CATBOX_BADGE;
-                            mainBadge.title = 'Usando backup do Catbox (Twitter indisponível)';
-                            mainBadge.style.background = '#667292';
+                            handleFailedBackup();
                         }
                     }
                 };
@@ -3869,27 +4094,31 @@
                 backupBadge.className = 'main-badge';
                 if (hasMerged) {
                     // Mescla salva conta como backup principal
-                    backupBadge.innerHTML = ICON_CATBOX_BADGE;
-                    backupBadge.title = 'Mescla salva no Catbox';
-                    backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: #667292; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
+                    backupBadge.innerHTML = ICON_TELEGRAM_BADGE;
+                    backupBadge.title = 'Mescla salva no Telegram';
+                    const rightOffset = nextTopRightBadgeOffset();
+                    backupBadge.style = `position: absolute; top: 10px; right: ${rightOffset}px; background: #2196f3; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;`;
                     imgContainer.appendChild(backupBadge);
                 } else if (backupCount > 0 && fallbackCount === 0) {
-                    // Todo backup OK (Catbox)
-                    backupBadge.innerHTML = ICON_CATBOX_BADGE;
-                    backupBadge.title = 'Imagens salvas no Catbox';
-                    backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: #667292; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
+                    // Todo backup OK (Telegram)
+                    backupBadge.innerHTML = ICON_TELEGRAM_BADGE;
+                    backupBadge.title = 'Imagens salvas no Telegram';
+                    const rightOffset = nextTopRightBadgeOffset();
+                    backupBadge.style = `position: absolute; top: 10px; right: ${rightOffset}px; background: #2196f3; color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;`;
                     imgContainer.appendChild(backupBadge);
                 } else if (fallbackCount > 0 && backupCount > 0) {
                     // Mix de backup e fallback
                     backupBadge.innerHTML = `${ICON_CLOUD_OFF} <span style="margin-left: 4px;">${backupCount}/${originalNumImgs}</span>`;
-                    backupBadge.title = `${backupCount} de ${originalNumImgs} imagens no Catbox`;
-                    backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(245,158,11,0.95); color: white; padding: 6px 8px; border-radius: 8px; font-size: 10px; display: flex; align-items: center; z-index: 6; cursor: help;';
+                    backupBadge.title = `${backupCount} de ${originalNumImgs} imagens no Telegram`;
+                    const rightOffset = nextTopRightBadgeOffset();
+                    backupBadge.style = `position: absolute; top: 10px; right: ${rightOffset}px; background: rgba(245,158,11,0.95); color: white; padding: 6px 8px; border-radius: 8px; font-size: 10px; display: flex; align-items: center; z-index: 6; cursor: help;`;
                     imgContainer.appendChild(backupBadge);
                 } else if (fallbackCount > 0) {
                     // Sem backup (Twitter)
                     backupBadge.innerHTML = ICON_TWITTER;
                     backupBadge.title = 'Usando imagens do Twitter (sem backup)';
-                    backupBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(113,118,123,0.95); color: white; padding: 6px; border-radius: 8px; font-size: 10px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;';
+                    const rightOffset = nextTopRightBadgeOffset();
+                    backupBadge.style = `position: absolute; top: 10px; right: ${rightOffset}px; background: rgba(113,118,123,0.95); color: white; padding: 6px; border-radius: 8px; font-size: 10px; display: flex; align-items: center; justify-content: center; z-index: 6; cursor: help;`;
                     imgContainer.appendChild(backupBadge);
                 }
 
@@ -4014,9 +4243,42 @@
                 });
             };
 
+            // Botão Testar Backup (Injeta a imagem [0] manualmente via uploadToTelegram)
+            const ICON_TEST_BACKUP = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>`;
+            const testBackupBtn = document.createElement('button');
+            testBackupBtn.innerHTML = ICON_TEST_BACKUP;
+            testBackupBtn.title = 'Testar envio (Envia formato Mescla ou Todas Imagens)';
+            testBackupBtn.style = 'background: transparent; border: 1px solid #333; color: #10b981; padding: 6px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;';
+            testBackupBtn.onmouseenter = () => { testBackupBtn.style.borderColor = '#10b981'; testBackupBtn.style.background = 'rgba(16,185,129,0.1)'; };
+            testBackupBtn.onmouseleave = () => { testBackupBtn.style.borderColor = '#333'; testBackupBtn.style.background = 'transparent'; };
+            testBackupBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (!b.images || b.images.length === 0) return;
+
+                testBackupBtn.style.opacity = '0.5';
+                testBackupBtn.disabled = true;
+
+                try {
+                    await backupBookmarkImages(b.id, { isManual: true, forceUpload: true });
+                    showToast('Testes disparados e roteados!');
+                } catch (error) {
+                    console.error('[pinboard] Erro no teste manual:', error);
+                    showToast('Erro no envio de teste', true);
+                } finally {
+                    testBackupBtn.style.opacity = '1';
+                    testBackupBtn.disabled = false;
+                }
+            };
+
             actions.appendChild(checkbox);
             actions.appendChild(infoCol);
-            actions.appendChild(editLinksBtn);
+
+            if (settings.debugMode) {
+                actions.appendChild(testBackupBtn);
+            }
+            if (b.images && b.images.length > 1) {
+                actions.appendChild(editLinksBtn);
+            }
             actions.appendChild(viewPostBtn);
             item.appendChild(imgContainer);
             item.appendChild(actions);
@@ -4026,9 +4288,9 @@
 
     // ==================== BULK ACTIONS ====================
     function updateBulkUI() {
-        const bulkContainer = document.getElementById('x-bookmark-bulk-actions');
-        const bulkInfo = document.getElementById('x-bookmark-bulk-info');
-        const bulkFavoriteBtn = document.getElementById('x-bookmark-bulk-favorite');
+        const bulkContainer = document.getElementById('pinboard-bulk-actions');
+        const bulkInfo = document.getElementById('pinboard-bulk-info');
+        const bulkFavoriteBtn = document.getElementById('pinboard-bulk-favorite');
         if (bulkContainer && bulkInfo) {
             const count = selectedItems.size;
             if (count > 0) {
@@ -4309,27 +4571,51 @@
                 img.src = formatTwitterUrl(src);
                 img.style = 'width: 100%; height: 280px; object-fit: cover; cursor: pointer; display: block;';
 
-                // Chain fallback: 4k → large → Catbox
+                // Chain fallback: 4k → large → Telegram
                 img.onerror = () => {
+                    img.dataset.failedAttempts = img.dataset.failedAttempts || '';
+                    if (img.dataset.failedAttempts.includes(img.src)) {
+                        img.onerror = null;
+                        return;
+                    }
+                    img.dataset.failedAttempts += img.src + '|';
                     const failedUrl = img.src;
                     const debugMode = getSettings().debugMode;
 
                     if (img.src.includes('name=4096x4096')) {
                         // Tentar large
                         if (debugMode) {
-                            console.log('[X-Bookmark] Details: 4k failed, trying large | URL:', failedUrl);
+                            console.log('[pinboard] Details: 4k failed, trying large | URL:', failedUrl);
                         } else {
-                            console.log('[X-Bookmark] Details: 4k failed, trying large');
+                            console.log('[pinboard] Details: 4k failed, trying large');
                         }
                         img.src = img.src.replace('name=4096x4096', 'name=large');
-                    } else if (bookmark.catboxUrls?.[idx]) {
-                        // Fallback para Catbox
-                        if (debugMode) {
-                            console.log('[X-Bookmark] Details: Large failed, using Catbox | Failed URL:', failedUrl, '| Catbox:', bookmark.catboxUrls[idx]);
+                    } else if (bookmark.telegramUrls?.[idx] && !img.dataset.telegramFallbackShown) {
+                        const tgRef = bookmark.telegramUrls[idx];
+                        img.dataset.telegramFallbackShown = '1';
+                        img.onerror = null;
+
+                        const handleFailedBackup = () => {
+                            img.src = '';
+                            img.style.outline = '2px solid #ef4444';
+                            img.title = '❌ Falha total (Twitter off, Telegram backup indisponível)';
+                        };
+
+                        const handleSuccessBackup = (url) => {
+                            img.src = url;
+                            img.style.outline = '2px solid #f59e0b';
+                            img.title = '⚠️ Twitter indisponível (Exibindo backup comprimido)';
+                        };
+
+                        if (tgRef.startsWith('tg:')) {
+                            getTelegramFileUrl(tgRef.slice(3))
+                                .then(url => { if (url) handleSuccessBackup(url); else handleFailedBackup(); })
+                                .catch(() => handleFailedBackup());
+                        } else if (tgRef.startsWith('https://')) {
+                            handleSuccessBackup(tgRef);
                         } else {
-                            console.log('[X-Bookmark] Details: Large failed, using Catbox');
+                            handleFailedBackup();
                         }
-                        img.src = bookmark.catboxUrls[idx];
                     }
                 };
 
@@ -4355,9 +4641,19 @@
             }
 
             const img = document.createElement('img');
-            img.src = url;
             img.style = 'width: 100%; height: auto; display: block; cursor: pointer;';
-            img.onclick = () => window.open(url, '_blank');
+
+            if (url && url.startsWith('tg:')) {
+                getTelegramFileUrl(url.slice(3)).then(resolvedUrl => {
+                    if (resolvedUrl) {
+                        img.src = resolvedUrl;
+                        img.onclick = () => window.open(resolvedUrl, '_blank');
+                    }
+                });
+            } else {
+                img.src = url;
+                img.onclick = () => window.open(url, '_blank');
+            }
 
             item.appendChild(meta);
             item.appendChild(img);
@@ -4374,11 +4670,44 @@
             mergeBtn.style = 'background: transparent; color: #f59e0b; border: 1px solid #f59e0b; padding: 10px 20px; cursor: pointer; border-radius: 9999px; font-weight: bold; display: flex; align-items: center; gap: 6px; transition: all 0.2s;';
             mergeBtn.onmouseenter = () => { mergeBtn.style.background = 'rgba(245,158,11,0.12)'; };
             mergeBtn.onmouseleave = () => { mergeBtn.style.background = 'transparent'; };
+
+            const unmergeBtn = document.createElement('button');
+            unmergeBtn.innerHTML = '🗑️ <span>Desfazer Mescla</span>';
+            unmergeBtn.title = 'Desfazer mescla e restaurar imagens múltiplas';
+            unmergeBtn.style = 'background: transparent; color: #ef4444; border: 1px solid #ef4444; padding: 10px 20px; cursor: pointer; border-radius: 9999px; font-weight: bold; display: flex; align-items: center; gap: 6px; transition: all 0.2s;';
+            unmergeBtn.style.display = bookmark.mergedImageUrl ? 'flex' : 'none';
+            unmergeBtn.onmouseenter = () => { unmergeBtn.style.background = 'rgba(239,68,68,0.1)'; };
+            unmergeBtn.onmouseleave = () => { unmergeBtn.style.background = 'transparent'; };
+            unmergeBtn.onclick = () => {
+                if (confirm('Tem certeza que deseja apagar a mescla? Voltará a exibir as imagens múltiplas separadas.')) {
+                    const bookmarks = getBookmarks();
+                    const idx = bookmarks.findIndex(b => b.id === bookmark.id);
+                    if (idx !== -1) {
+                        bookmarks[idx].mergedImageUrl = null;
+                        saveBookmarks(bookmarks);
+
+                        bookmark.mergedImageUrl = null;
+                        cleanupMergedPreview();
+                        showingMerged = false;
+                        titleEl.innerText = 'Imagens do Post';
+
+                        updateGalleryContent();
+
+                        const updatedBookmark = getBookmarks().find(b => b.id === bookmark.id);
+                        if (updatedBookmark) {
+                            detailModal.remove();
+                            showDetails(updatedBookmark);
+                        }
+                    }
+                }
+            };
+
             mergeBtn.onclick = async () => {
                 if (showingMerged) {
                     showingMerged = false;
                     titleEl.innerText = 'Imagens do Post';
                     mergeBtn.innerHTML = getMergeIdleLabel();
+                    unmergeBtn.style.display = 'none';
                     renderOriginalImages();
                     return;
                 }
@@ -4388,6 +4717,7 @@
                     titleEl.innerText = 'Imagem Mesclada Salva';
                     renderMergedPreview(bookmark.mergedImageUrl, null);
                     mergeBtn.innerHTML = `${ICON_GRID} <span>Ver Originais</span>`;
+                    unmergeBtn.style.display = 'flex';
                     return;
                 }
 
@@ -4416,10 +4746,11 @@
                     titleEl.innerText = savedMergedUrl ? 'Imagem Mesclada Salva' : 'Imagem Mesclada';
                     renderMergedPreview(previewUrl, mergeInfo);
                     mergeBtn.innerHTML = `${ICON_GRID} <span>Ver Originais</span>`;
+                    if (savedMergedUrl) unmergeBtn.style.display = 'flex';
                     showToast(savedMergedUrl ? 'Mescla salva na galeria' : 'Mescla criada (não foi possível salvar)');
                     updateGalleryContent();
                 } catch (saveError) {
-                    console.error('[X-Bookmark] Falha ao salvar mescla na galeria:', saveError);
+                    console.error('[pinboard] Falha ao salvar mescla na galeria:', saveError);
                     showToast(`Erro ao salvar mescla: ${saveError.message || 'falha desconhecida'}`);
                     mergeBtn.innerHTML = getMergeIdleLabel();
                 } finally {
@@ -4433,9 +4764,11 @@
                 titleEl.innerText = 'Imagem Mesclada Salva';
                 renderMergedPreview(bookmark.mergedImageUrl, null);
                 mergeBtn.innerHTML = `${ICON_GRID} <span>Ver Originais</span>`;
+                // unmergeBtn defaults to flex on load so it will be visible
             }
 
             btnContainer.appendChild(mergeBtn);
+            btnContainer.appendChild(unmergeBtn);
         }
 
         const closeBtn = document.createElement('button');
@@ -4713,15 +5046,15 @@
         const footer = document.createElement('div');
         footer.style = 'padding: 20px 25px; border-top: 1px solid #2a2a2a; background: #15181c; flex-shrink: 0;';
 
-        // Aviso sobre catbox - AMARELO para chamar atenção
-        if (bookmark.catboxUrls && bookmark.catboxUrls.some(u => u && u.startsWith('https://'))) {
+        // Aviso sobre backup do Telegram - AMARELO para chamar atenção
+        if (bookmark.telegramUrls && bookmark.telegramUrls.some(u => u && (u.startsWith('tg:') || u.startsWith('https://')))) {
             const warning = document.createElement('div');
             warning.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
                     <div>
                         <div style="color: #eab308; font-size: 13px; font-weight: 500;">Backup detectado</div>
-                        <div style="color: #a3a310; font-size: 11px;">Editar links invalidará os backups atuais do Catbox</div>
+                        <div style="color: #a3a310; font-size: 11px;">Editar links invalidará os backups atuais do Telegram</div>
                     </div>
                 </div>
             `;
@@ -4769,41 +5102,20 @@
             }
 
             // Verificar se há backups antigos que precisam ser tratados
-            const oldCatboxUrls = bookmark.catboxUrls || [];
-            const hasOldBackups = oldCatboxUrls.some(u => u && u.startsWith('https://'));
+            const oldTelegramUrls = bookmark.telegramUrls || [];
+            const hasOldBackups = oldTelegramUrls.some(u => u && (u.startsWith('tg:') || u.startsWith('https://')));
+            let keepOldBackups = false;
 
             if (hasChanges && hasOldBackups) {
-                const settings = getSettings();
+                // Backups no Telegram não podem ser deletados via API; apenas limpar a referência local
+                const choice = await showChoiceModal('O que fazer com os backups antigos no Telegram?', [
+                    { label: 'Limpar referências locais', value: 'delete', bg: '#f4212e', bold: true },
+                    { label: 'Manter referências', value: 'keep', bg: '#333' },
+                    { label: 'Cancelar', value: 'cancel', color: '#888' }
+                ]);
 
-                if (settings.catboxUserhash) {
-                    // Perguntar o que fazer com backups antigos
-                    const choice = await showChoiceModal('O que fazer com os arquivos antigos no Catbox?', [
-                        { label: 'Deletar arquivos antigos', value: 'delete', bg: '#f4212e', bold: true },
-                        { label: 'Manter arquivos no Catbox', value: 'keep', bg: '#333' },
-                        { label: 'Cancelar', value: 'cancel', color: '#888' }
-                    ]);
-
-                    if (choice === 'cancel' || choice === null) return;
-
-                    if (choice === 'delete') {
-                        // Extrair file IDs e deletar
-                        const filesToDelete = oldCatboxUrls.filter(u => u && u.startsWith('https://'));
-                        const fileIds = filesToDelete.map(u => u.split('/').pop());
-
-                        if (fileIds.length > 0) {
-                            // Log das imagens sendo deletadas
-                            console.log('[X-Bookmark] Deleting old Catbox files:');
-                            filesToDelete.forEach((url, i) => {
-                                console.log(`[X-Bookmark]   ${i + 1}. ${url}`);
-                            });
-                            console.log(`[X-Bookmark] File IDs to delete: ${fileIds.join(', ')}`);
-
-                            showToast('Deletando arquivos antigos...');
-                            const result = await deleteFromCatbox(fileIds);
-                            console.log('[X-Bookmark] Delete completed:', result);
-                        }
-                    }
-                }
+                if (choice === 'cancel' || choice === null) return;
+                if (choice === 'keep') keepOldBackups = true;
             }
 
             // Atualizar bookmark
@@ -4812,9 +5124,9 @@
             if (idx !== -1) {
                 // Normalizar URLs para 4k
                 bookmarks[idx].images = cleanedImages.map(formatTwitterUrl);
-                // Limpar catboxUrls pois o conteúdo mudou
-                if (hasChanges) {
-                    bookmarks[idx].catboxUrls = [];
+                // Limpar telegramUrls pois o conteúdo mudou (salvo se o usuário pediu para manter)
+                if (hasChanges && !keepOldBackups) {
+                    bookmarks[idx].telegramUrls = [];
                 }
                 saveBookmarks(bookmarks);
                 showToast('Links atualizados com sucesso');
@@ -4902,15 +5214,15 @@
     async function periodicBackupScan(isInitial = false) {
         const settings = getSettings();
 
-        // Só executa se backup automático estiver habilitado
-        if (!settings.catboxAutoBackup || !settings.catboxUserhash) {
-            console.log('[X-Bookmark] Periodic scan skipped: auto backup not configured');
+        // Só executa se backup automático estiver habilitado e credenciais configuradas
+        if (!settings.telegramAutoBackup || !settings.telegramToken || !settings.telegramChatId) {
+            console.log('[pinboard] Periodic scan skipped: auto backup not configured');
             return;
         }
 
         const rules = getAutotagRules();
         if (rules.length === 0) {
-            console.log('[X-Bookmark] Periodic scan skipped: no auto-tag rules');
+            console.log('[pinboard] Periodic scan skipped: no auto-tag rules');
             return;
         }
 
@@ -4925,9 +5237,9 @@
         const bookmarks = getBookmarks();
         const pendingBookmarks = [];
 
-        console.log('[X-Bookmark] Scan config:', {
+        console.log('[pinboard] Scan config:', {
             autotagUsers: [...autotagUsers],
-            filterTags: settings.catboxFilterTags || [],
+            filterTags: settings.telegramFilterTags || [],
             totalBookmarks: bookmarks.length
         });
 
@@ -4937,8 +5249,8 @@
 
             // Verificar se tem tags no filtro (se configurado)
             let matchesFilterTag = false;
-            if (settings.catboxFilterTags && settings.catboxFilterTags.length > 0) {
-                matchesFilterTag = bookmark.tags?.some(t => settings.catboxFilterTags.includes(t));
+            if (settings.telegramFilterTags && settings.telegramFilterTags.length > 0) {
+                matchesFilterTag = bookmark.tags?.some(t => settings.telegramFilterTags.includes(t));
             }
 
             // Bookmark deve ser de usuário com auto-tag OU ter tag do filtro
@@ -4949,18 +5261,21 @@
             // Verificar se precisa de backup
             if (!bookmark.images || bookmark.images.length === 0) continue;
 
-            // Verificar se já tem backup completo
-            const needsBackup = !bookmark.catboxUrls ||
-                bookmark.catboxUrls.length !== bookmark.images.length ||
-                !bookmark.catboxUrls.every(url => url && url.startsWith('https://'));
+            // Bookmarks com mescla salva já têm backup completo (a mescla é o backup)
+            if (bookmark.mergedImageUrl && (bookmark.mergedImageUrl.startsWith('https://') || bookmark.mergedImageUrl.startsWith('tg:'))) continue;
+
+            // Verificar se já tem backup completo das imagens individuais
+            const needsBackup = !bookmark.telegramUrls ||
+                bookmark.telegramUrls.length !== bookmark.images.length ||
+                !bookmark.telegramUrls.every(url => url && (url.startsWith('tg:') || url.startsWith('https://')));
 
             if (!needsBackup) continue;
 
-            console.log('[X-Bookmark] Found pending:', {
+            console.log('[pinboard] Found pending:', {
                 handle,
                 tags: bookmark.tags,
                 hasImages: bookmark.images?.length,
-                hasCatbox: bookmark.catboxUrls?.length || 0,
+                hasTelegramBackup: bookmark.telegramUrls?.length || 0,
                 isAutotagUser,
                 matchesFilterTag
             });
@@ -4969,14 +5284,14 @@
         }
 
         if (pendingBookmarks.length === 0) {
-            console.log('[X-Bookmark] Periodic scan: all bookmarks already backed up');
+            console.log('[pinboard] Periodic scan: all bookmarks already backed up');
             if (isInitial) {
                 showToast('Varredura concluída: todos os backups em dia');
             }
             return;
         }
 
-        console.log(`[X-Bookmark] Periodic scan: found ${pendingBookmarks.length} bookmark(s) needing backup`);
+        console.log(`[pinboard] Periodic scan: found ${pendingBookmarks.length} bookmark(s) needing backup`);
         showToast(`Varredura: ${pendingBookmarks.length} bookmark(s) pendente(s)`);
 
         // Fazer backup de cada um (com delay para não sobrecarregar)
@@ -4986,11 +5301,11 @@
                 // Delay entre backups para evitar rate-limit
                 await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (error) {
-                console.error(`[X-Bookmark] Periodic backup failed for ${bookmark.id}:`, error);
+                console.error(`[pinboard] Periodic backup failed for ${bookmark.id}:`, error);
             }
         }
 
-        console.log('[X-Bookmark] Periodic scan completed');
+        console.log('[pinboard] Periodic scan completed');
         showToast(`Varredura concluída: ${pendingBookmarks.length} backup(s)`);
     }
 
@@ -5016,596 +5331,12 @@
 
         if (migrated > 0) {
             saveBookmarks(bookmarks);
-            console.log(`[X-Bookmark] Migração: ${migrated} URL(s) com pipe corrigida(s)`);
+            console.log(`[pinboard] Migração: ${migrated} URL(s) com pipe corrigida(s)`);
         }
     }
 
     // Executar migração imediatamente
     migrateCleanPipeUrls();
-
-    // ==================== VERIFICAR LINKS CATBOX MORTOS ====================
-    async function checkDeadCatboxLinks() {
-        const bookmarks = getBookmarks();
-        const catboxUrls = [];
-
-        // Coletar todas as URLs do Catbox
-        bookmarks.forEach(bookmark => {
-            if (bookmark.catboxUrls && Array.isArray(bookmark.catboxUrls)) {
-                bookmark.catboxUrls.forEach((url, idx) => {
-                    if (url && url.startsWith('https://')) {
-                        catboxUrls.push({
-                        bookmarkId: bookmark.id,
-                        postUrl: bookmark.postUrl,
-                        imageIndex: idx,
-                        deadCatboxUrl: url,
-                        catboxUrl: url,
-                        status: 'dead'
-                    });
-                    }
-                });
-            }
-        });
-
-        if (catboxUrls.length === 0) {
-            showToast('Nenhum backup Catbox encontrado');
-            return;
-        }
-
-        // Criar modal de progresso
-        const overlay = document.createElement('div');
-        overlay.style = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); z-index: 10003;
-            display: flex; justify-content: center; align-items: center;
-        `;
-
-        const modal = document.createElement('div');
-        modal.style = `
-            background: #15181c; padding: 30px; border-radius: 16px;
-            width: 500px; max-width: 95%; color: white; text-align: center;
-            border: 1px solid #2a2a2a;
-        `;
-
-        const title = document.createElement('h3');
-        title.innerText = 'Verificando Links Catbox';
-        title.style = 'margin: 0 0 20px 0;';
-
-        const progressText = document.createElement('div');
-        progressText.style = 'margin-bottom: 15px; color: #71767b;';
-        progressText.innerText = `0 / ${catboxUrls.length}`;
-
-        const progressBar = document.createElement('div');
-        progressBar.style = 'width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden;';
-
-        const progressFill = document.createElement('div');
-        progressFill.style = 'width: 0%; height: 100%; background: #1d9bf0; transition: width 0.2s;';
-        progressBar.appendChild(progressFill);
-
-        const warningMsg = document.createElement('div');
-        warningMsg.style = 'margin-top: 15px; font-size: 11px; color: #f59e0b; font-style: italic;';
-        warningMsg.innerText = '⚠️ Isso pode demorar alguns minutos dependendo da quantidade de fotos. Não feche a aba.';
-
-        const statusText = document.createElement('div');
-        statusText.style = 'margin-top: 10px; font-size: 12px; color: #71767b;';
-
-        modal.appendChild(title);
-        modal.appendChild(progressText);
-        modal.appendChild(progressBar);
-        modal.appendChild(warningMsg);
-        modal.appendChild(statusText);
-        overlay.appendChild(modal);
-        document.body.appendChild(overlay);
-
-        const deadLinks = [];
-        let checked = 0;
-        let skipScan = false;
-
-        // Atalho para pular scan (apenas para debug)
-        const skipHandler = (e) => {
-            if (e.key.toLowerCase() === 'd') {
-                skipScan = true;
-                statusText.innerText = 'PULANDO VERIFICAÇÃO...';
-                document.removeEventListener('keydown', skipHandler);
-            }
-        };
-        document.addEventListener('keydown', skipHandler);
-
-        // Verificar cada URL
-        for (const item of catboxUrls) {
-            if (skipScan) {
-                // Ao pular, marcar itens restantes como mortos para popular o relatório no debug
-                deadLinks.push(item);
-            } else {
-                try {
-                    statusText.innerText = `Verificando: ${item.catboxUrl.split('/').pop()}`;
-
-                    const response = await fetch(item.catboxUrl, { method: 'HEAD', mode: 'no-cors' });
-                    // Com no-cors não conseguimos ver o status, então vamos tentar de outra forma
-                    // Usar uma imagem para testar
-                    const isAlive = await new Promise((resolve) => {
-                        const img = new Image();
-                        img.onload = () => resolve(true);
-                        img.onerror = () => resolve(false);
-                        img.src = item.catboxUrl;
-                        // Timeout de 10 segundos
-                        setTimeout(() => resolve(false), 10000);
-                    });
-
-                    if (!isAlive) {
-                        deadLinks.push(item);
-                    }
-                } catch (e) {
-                    deadLinks.push(item);
-                }
-            }
-
-            checked++;
-            progressText.innerText = `${checked} / ${catboxUrls.length}`;
-            progressFill.style.width = `${(checked / catboxUrls.length) * 100}%`;
-            
-            // Pequeno delay para permitir o event loop processar a tecla D
-            if (!skipScan) await new Promise(r => setTimeout(r, 50));
-        }
-
-        document.removeEventListener('keydown', skipHandler);
-        overlay.remove();
-
-        // Limpar relatório anterior e salvar apenas o atual (v2.6.45 - Sem duplicatas)
-        // Garantir que todos os mortos tenham o status 'dead'
-        deadLinks.forEach(item => item.status = 'dead');
-
-        // Persistir IDs mortos conhecidos para bloquear reuso em uploads futuros
-        const deadFileIds = deadLinks
-            .map(item => extractCatboxFileId(item.deadCatboxUrl || item.catboxUrl))
-            .filter(Boolean);
-        if (deadFileIds.length) {
-            rememberDeadFileIds(deadFileIds);
-            console.log('[X-Bookmark] IDs mortos memorizados:', deadFileIds.join(', '));
-        }
-
-        // Salvar novo relatório (limpa o histórico de scans anteriores)
-        GM_setValue(DEAD_REPORT_KEY, {
-            timestamp: new Date().toISOString(),
-            deadLinks: deadLinks,
-            totalChecked: catboxUrls.length
-        });
-
-        // Mostrar resultado
-        if (deadLinks.length === 0) {
-            showToast(`Todos os ${catboxUrls.length} links estão funcionando!`);
-        } else {
-            showDeadLinksReport(deadLinks, catboxUrls.length);
-        }
-    }
-
-    // Modal para mostrar relatório de links mortos - Versão Melhorada com Previews e Re-upload
-    function showDeadLinksReport(deadLinks, totalChecked) {
-        const safeDeadLinks = Array.isArray(deadLinks) ? deadLinks : [];
-        const safeTotalChecked = Number.isFinite(totalChecked) ? totalChecked : safeDeadLinks.length;
-
-        const overlay = document.createElement('div');
-        overlay.style = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); z-index: 10003;
-            display: flex; justify-content: center; align-items: center;
-            animation: fadeIn 0.2s ease;
-        `;
-
-        const modal = document.createElement('div');
-        modal.style = `
-            background: #15181c; padding: 0; border-radius: 20px;
-            width: 700px; max-width: 95%; max-height: 85vh; color: white;
-            border: 1px solid #2a2a2a; display: flex; flex-direction: column;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-            animation: slideUp 0.3s ease;
-        `;
-
-        // Header
-        const header = document.createElement('div');
-        header.style = 'padding: 25px; border-bottom: 1px solid #2a2a2a; background: linear-gradient(180deg, rgba(244,33,46,0.08) 0%, transparent 100%);';
-        header.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(244,33,46,0.1); display: flex; align-items: center; justify-content: center; color: #f4212e;">
-                    ${ICON_CLOUD_OFF}
-                </div>
-                <div>
-                    <h3 style="margin: 0; color: #f4212e; font-size: 20px;">Relatório de Links Mortos</h3>
-                    <p style="margin: 5px 0 0 0; color: #71767b; font-size: 13px;">
-                        ${safeDeadLinks.length} de ${safeTotalChecked} links do Catbox estão inacessíveis
-                    </p>
-                </div>
-            </div>
-        `;
-
-        // Body
-        const body = document.createElement('div');
-        body.style = 'padding: 0; overflow-y: auto; flex: 1;';
-
-        const listContainer = document.createElement('div');
-        listContainer.style = 'padding: 20px;';
-
-        safeDeadLinks.forEach((item, reportIdx) => {
-            const row = document.createElement('div');
-            row.style = `
-                display: flex; gap: 15px; padding: 15px;
-                background: #1a1d21; border-radius: 12px;
-                margin-bottom: 12px; border: 1px solid #333;
-                align-items: center;
-            `;
-
-            // Preview Thumbnail
-            const thumb = document.createElement('div');
-            thumb.style = `
-                width: 80px; height: 80px; border-radius: 8px;
-                overflow: hidden; background: #000; flex-shrink: 0;
-                border: 1px solid #444;
-            `;
-            const img = document.createElement('img');
-            // Tentar pegar do Twitter original para o preview
-            const bookmarks = getBookmarks();
-            const bm = bookmarks.find(b => b.id === item.bookmarkId);
-            img.src = bm ? formatTwitterUrl(bm.images[item.imageIndex]) : '';
-            img.style = 'width: 100%; height: 100%; object-fit: cover;';
-            img.onerror = () => {
-                // Se o 4k falhar no preview, tenta o large
-                if (img.src.includes('name=4096x4096')) {
-                    img.src = img.src.replace('name=4096x4096', 'name=large');
-                } else {
-                    img.style.display = 'none';
-                    thumb.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#444;font-size:20px;">X</div>';
-                }
-            };
-            thumb.appendChild(img);
-
-            // Info
-            const info = document.createElement('div');
-            info.style = 'flex: 1; min-width: 0;';
-
-            const postLink = document.createElement('a');
-            postLink.href = item.postUrl;
-            postLink.target = '_blank';
-            postLink.innerText = `Post Original: ${item.postUrl}`;
-            postLink.style = 'color: #1d9bf0; font-size: 13px; font-weight: 600; text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px;';
-
-            const deadUrl = item.deadCatboxUrl || item.catboxUrl || '';
-            const fixedUrl = item.fixedCatboxUrl || '';
-
-            const detail = document.createElement('div');
-            detail.style = 'color: #71767b; font-size: 11px; margin-bottom: 8px;';
-            const deadFile = deadUrl ? extractCatboxFileId(deadUrl) : 'desconhecido';
-            const fixedFile = fixedUrl ? extractCatboxFileId(fixedUrl) : '';
-            detail.innerText = item.status === 'fixed' && fixedFile
-                ? `Imagem ${item.imageIndex + 1} | Link morto: ${deadFile} | Novo link: ${fixedFile}`
-                : `Imagem ${item.imageIndex + 1} | Link morto: ${deadFile}`;
-
-            const statusBadge = document.createElement('span');
-            statusBadge.id = `status-badge-${reportIdx}`;
-            
-            if (item.status === 'fixed') {
-                statusBadge.innerText = '✅ Reupado com sucesso';
-                statusBadge.style = 'font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2);';
-            } else {
-                statusBadge.innerText = '❌ Inacessível';
-                statusBadge.style = 'font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(244,33,46,0.1); color: #f4212e; border: 1px solid rgba(244,33,46,0.2);';
-            }
-
-            info.appendChild(postLink);
-            info.appendChild(detail);
-            info.appendChild(statusBadge);
-
-            // Botões de Ação
-            const actionGroup = document.createElement('div');
-            actionGroup.style = 'display: flex; gap: 8px; align-items: center;';
-
-            // Botão Editar Manual (v2.6.51)
-            const manualBtn = document.createElement('button');
-            manualBtn.innerHTML = ICON_PENCIL_SMALL;
-            manualBtn.title = 'Editar link manualmente';
-            manualBtn.style = `
-                padding: 8px; border-radius: 50%;
-                background: rgba(255,255,255,0.05); border: 1px solid #333;
-                color: #888; cursor: pointer; display: flex; align-items: center; justify-content: center;
-                transition: all 0.2s;
-            `;
-            manualBtn.onmouseenter = () => { manualBtn.style.borderColor = '#1d9bf0'; manualBtn.style.color = '#1d9bf0'; };
-            manualBtn.onmouseleave = () => { manualBtn.style.borderColor = '#333'; manualBtn.style.color = '#888'; };
-            manualBtn.onclick = () => {
-                const newUrl = prompt('Cole a nova URL da imagem (Ex: Imgur, Catbox, etc):', item.catboxUrl);
-                if (newUrl && newUrl !== item.catboxUrl) {
-                    handleManualFix(item, newUrl, statusBadge, manualBtn, reuploadBtn);
-                }
-            };
-
-            // Botão Reupar
-            const reuploadBtn = document.createElement('button');
-            reuploadBtn.id = `reupload-btn-${reportIdx}`;
-            reuploadBtn.innerHTML = `<span>Reupar</span>`;
-            reuploadBtn.style = `
-                padding: 8px 16px; border-radius: 20px;
-                background: #1d9bf0; border: none;
-                color: white; cursor: pointer; font-size: 12px; font-weight: 600;
-                transition: all 0.2s; flex-shrink: 0;
-                display: ${item.status === 'fixed' ? 'none' : 'block'};
-            `;
-            reuploadBtn.onclick = async () => {
-                reuploadBtn.disabled = true;
-                reuploadBtn.style.opacity = '0.5';
-                reuploadBtn.innerText = 'Processando...';
-
-                const success = await handleReupload(item, statusBadge);
-                if (success) {
-                    reuploadBtn.style.display = 'none';
-                    manualBtn.style.display = 'none';
-                } else {
-                    reuploadBtn.disabled = false;
-                    reuploadBtn.style.opacity = '1';
-                    reuploadBtn.innerText = 'Tentar Novamente';
-                }
-            };
-
-            if (item.status === 'fixed') manualBtn.style.display = 'none';
-
-            actionGroup.appendChild(manualBtn);
-            actionGroup.appendChild(reuploadBtn);
-
-            row.appendChild(thumb);
-            row.appendChild(info);
-            row.appendChild(actionGroup);
-            listContainer.appendChild(row);
-        });
-
-        body.appendChild(listContainer);
-
-        // Footer
-        const footer = document.createElement('div');
-        footer.style = 'padding: 20px 25px; border-top: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: center;';
-
-        const leftBtns = document.createElement('div');
-        leftBtns.style = 'display: flex; gap: 10px;';
-
-        const copyBtn = document.createElement('button');
-        copyBtn.innerHTML = `<span>Copiar Lista</span>`;
-        copyBtn.style = 'padding: 10px 20px; background: #2a2a2a; border: 1px solid #333; border-radius: 20px; color: #e7e9ea; cursor: pointer; font-size: 14px;';
-        copyBtn.onclick = () => {
-            const text = safeDeadLinks.map(item =>
-                `Post: ${item.postUrl}\nImagem ${item.imageIndex + 1}\nLink morto: ${item.deadCatboxUrl || item.catboxUrl}${item.fixedCatboxUrl ? `\nNovo link: ${item.fixedCatboxUrl}` : ''}`
-            ).join('\n\n');
-            navigator.clipboard.writeText(text);
-            showToast('Lista copiada!');
-        };
-
-        const reuploadAllBtn = document.createElement('button');
-        reuploadAllBtn.innerHTML = `<span>Reupar Todos</span>`;
-        reuploadAllBtn.style = 'padding: 10px 24px; background: #22c55e; border: none; border-radius: 20px; color: white; cursor: pointer; font-size: 14px; font-weight: 600;';
-        reuploadAllBtn.onclick = async () => {
-            if (!confirm(`Deseja tentar reupar os ${safeDeadLinks.length} itens?`)) return;
-            reuploadAllBtn.disabled = true;
-            reuploadAllBtn.style.opacity = '0.5';
-            reuploadAllBtn.innerText = 'Reupando tudo...';
-
-            let count = 0;
-            for (let i = 0; i < safeDeadLinks.length; i++) {
-                const badge = document.getElementById(`status-badge-${i}`);
-                const btn = document.getElementById(`reupload-btn-${i}`);
-                if (btn && btn.style.display !== 'none') {
-                    const success = await handleReupload(safeDeadLinks[i], badge);
-                    if (success) {
-                        btn.style.display = 'none';
-                        count++;
-                    }
-                }
-            }
-            showToast(`${count} imagens reupadas com sucesso!`);
-            reuploadAllBtn.innerText = 'Concluído';
-        };
-
-        const closeBtn = document.createElement('button');
-        closeBtn.innerText = 'Fechar';
-        closeBtn.style = 'padding: 10px 24px; background: transparent; border: 1px solid #333; border-radius: 20px; color: #e7e9ea; cursor: pointer; font-size: 14px;';
-        closeBtn.onclick = () => overlay.remove();
-
-        leftBtns.appendChild(copyBtn);
-        leftBtns.appendChild(reuploadAllBtn);
-        footer.appendChild(leftBtns);
-        footer.appendChild(closeBtn);
-
-        modal.appendChild(header);
-        modal.appendChild(body);
-        modal.appendChild(footer);
-        overlay.appendChild(modal);
-        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-        document.body.appendChild(overlay);
-    }
-
-    // Lógica para reupar uma imagem específica
-    async function handleReupload(item, statusBadge) {
-        try {
-            console.log('[X-Bookmark] Iniciando re-upload para:', item);
-            const deadUrl = item.deadCatboxUrl || item.catboxUrl;
-            statusBadge.innerText = '⏳ Baixando original...';
-            statusBadge.style.background = 'rgba(29,155,240,0.1)';
-            statusBadge.style.color = '#1d9bf0';
-            statusBadge.style.borderColor = 'rgba(29,155,240,0.2)';
-
-            const bookmarks = getBookmarks();
-            const bmIdx = bookmarks.findIndex(b => b.id === item.bookmarkId);
-            if (bmIdx === -1) throw new Error('Bookmark não encontrado no banco de dados');
-
-            const originalUrl = bookmarks[bmIdx].images[item.imageIndex];
-            
-            // 1. Primeira tentativa de Upload
-            statusBadge.innerText = '⏳ Subindo para Catbox...';
-            let newCatboxUrl = await uploadToCatbox(originalUrl);
-            console.log('[X-Bookmark] URL retornada no upload inicial:', newCatboxUrl);
-            
-            if (!newCatboxUrl || !newCatboxUrl.startsWith('https://files.catbox.moe/')) {
-                throw new Error('Catbox retornou uma URL inválida');
-            }
-
-            // 2. Se o link for suspeito (igual ao morto ou conhecido como morto), forçar novo link
-            const initialKnownDead = isKnownDeadCatboxUrl(newCatboxUrl);
-            if (initialKnownDead) {
-                console.warn('[X-Bookmark] Catbox retornou uma URL conhecida como morta. Forcando fallback:', newCatboxUrl);
-            }
-
-            let mustForceFallback = initialKnownDead;
-
-            if (newCatboxUrl === deadUrl) {
-                console.log('[X-Bookmark] Catbox retornou o mesmo link. Verificando se voltou a funcionar...');
-                const isNowAlive = await probeImageUrl(newCatboxUrl, 7000, 2);
-                if (!isNowAlive) {
-                    mustForceFallback = true;
-                }
-            }
-
-            if (mustForceFallback) {
-                console.warn('[X-Bookmark] O link continua suspeito/morto. Tentando forçar NOVO LINK com qualidade alternativa...');
-
-                // Tenta deletar o antigo (mesmo que falhe, tentamos)
-                const fileId = extractCatboxFileId(deadUrl);
-                if (fileId) {
-                    const delResult = await deleteFromCatbox([fileId]);
-                    if (typeof delResult === 'string' && delResult.toLowerCase().includes("file doesn't exist")) {
-                        console.warn('[X-Bookmark] O arquivo existe, mas a API nao deixou deletar. Seguindo com fallback sem depender da delecao.');
-                    }
-                }
-
-                // MUDA O HASH: Se 4k falhou, tenta Large.
-                let forceNewUrl;
-                if (originalUrl.includes('name=4096x4096')) {
-                    forceNewUrl = originalUrl.replace('name=4096x4096', 'name=large');
-                } else {
-                    forceNewUrl = originalUrl.includes('?') ? originalUrl + '&name=4096x4096' : originalUrl + '?name=4096x4096';
-                }
-
-                console.log('[X-Bookmark] Reupando versão alternativa para mudar o hash:', forceNewUrl);
-                try {
-                    newCatboxUrl = await uploadToCatboxSingle(forceNewUrl);
-                    console.log('[X-Bookmark] URL retornada no fallback por URL:', newCatboxUrl);
-                } catch (uploadError) {
-                    console.warn('[X-Bookmark] Fallback por URL alternada falhou:', uploadError.message || uploadError);
-                }
-
-                const altValidation = await validateFinalCatboxUrl(newCatboxUrl);
-                const altKnownDead = isKnownDeadCatboxUrl(newCatboxUrl);
-                if (altKnownDead) {
-                    console.warn('[X-Bookmark] Fallback por URL retornou ID conhecido como morto:', newCatboxUrl);
-                }
-                if (!altValidation.ok || altKnownDead) {
-                    console.warn('[X-Bookmark] Fallback por URL nao validou:', altValidation);
-                    console.warn('[X-Bookmark] Fallback por URL ainda falhou. Tentando upload binario recodificado...');
-                    const binaryFallbackUrl = await forceUploadWithNewHash(originalUrl, deadUrl);
-                    if (binaryFallbackUrl) {
-                        newCatboxUrl = binaryFallbackUrl;
-                        console.log('[X-Bookmark] URL retornada no fallback binario:', newCatboxUrl);
-                    }
-                }
-            }
-
-            // 3. Validação Final REAL (Aumentado para 10s)
-            statusBadge.innerText = '⏳ Validando link final...';
-            const finalValidation = await validateFinalCatboxUrl(newCatboxUrl);
-            const finalFileId = extractCatboxFileId(newCatboxUrl) || 'sem-id';
-
-            if (isKnownDeadCatboxUrl(newCatboxUrl)) {
-                throw new Error(`Catbox retornou URL marcada como morta (${finalFileId})`);
-            }
-
-            if (!finalValidation.ok) {
-                throw new Error(newCatboxUrl === deadUrl
-                    ? 'Catbox manteve a mesma URL morta mesmo apos fallback (provavel cache/deduplicacao)'
-                    : `O novo link (${finalFileId}) nao validou (${finalValidation.method || 'desconhecido'}${finalValidation.status ? ` ${finalValidation.status}` : ''})`);
-            }
-
-            // 4. ATUALIZAÇÃO SÓ OCORRE SE PASSAR NA VALIDAÇÃO
-            if (!bookmarks[bmIdx].catboxUrls) bookmarks[bmIdx].catboxUrls = [];
-            bookmarks[bmIdx].catboxUrls[item.imageIndex] = newCatboxUrl;
-            saveBookmarks(bookmarks);
-
-            // Atualizar UI e Histórico
-            item.status = 'fixed';
-            item.deadCatboxUrl = deadUrl;
-            item.fixedCatboxUrl = newCatboxUrl;
-            const report = GM_getValue(DEAD_REPORT_KEY);
-            if (report && report.deadLinks) {
-                const reportItem = report.deadLinks.find(dl => dl.bookmarkId === item.bookmarkId && dl.imageIndex === item.imageIndex);
-                if (reportItem) {
-                    reportItem.status = 'fixed';
-                    reportItem.deadCatboxUrl = reportItem.deadCatboxUrl || reportItem.catboxUrl || deadUrl;
-                    reportItem.fixedCatboxUrl = newCatboxUrl;
-                    GM_setValue(DEAD_REPORT_KEY, report);
-                }
-            }
-
-            console.log('[X-Bookmark] Reupload concluido:', {
-                dead: deadUrl,
-                novo: newCatboxUrl,
-                bookmarkId: item.bookmarkId,
-                imageIndex: item.imageIndex
-            });
-
-            // Álbum
-            const settings = getSettings();
-            const newFileId = newCatboxUrl.split('/').pop();
-            if (settings.catboxAlbumShort && newFileId) {
-                await addToCatboxAlbum([newFileId]);
-            }
-
-            statusBadge.innerText = '✅ Reupado com sucesso';
-            statusBadge.style.background = 'rgba(34,197,94,0.1)';
-            statusBadge.style.color = '#22c55e';
-            statusBadge.style.borderColor = 'rgba(34,197,94,0.2)';
-
-            updateGalleryContent();
-            return true;
-
-        } catch (e) {
-            console.error('[X-Bookmark] Falha no Reupload:', e);
-            statusBadge.innerText = '❌ ' + (e.message || 'Erro no upload');
-            statusBadge.style.background = 'rgba(244,33,46,0.1)';
-            statusBadge.style.color = '#f4212e';
-            statusBadge.style.borderColor = 'rgba(244,33,46,0.2)';
-            return false;
-        }
-    }
-
-    // Função para correção manual via prompt
-    function handleManualFix(item, newUrl, statusBadge, manualBtn, reuploadBtn) {
-        const bookmarks = getBookmarks();
-        const bmIdx = bookmarks.findIndex(b => b.id === item.bookmarkId);
-        if (bmIdx === -1) return;
-        const deadUrl = item.deadCatboxUrl || item.catboxUrl;
-
-        if (!bookmarks[bmIdx].catboxUrls) bookmarks[bmIdx].catboxUrls = [];
-        bookmarks[bmIdx].catboxUrls[item.imageIndex] = newUrl;
-        saveBookmarks(bookmarks);
-
-        item.status = 'fixed';
-        item.deadCatboxUrl = deadUrl;
-        item.fixedCatboxUrl = newUrl;
-
-        const report = GM_getValue(DEAD_REPORT_KEY);
-        if (report && report.deadLinks) {
-            const reportItem = report.deadLinks.find(dl => dl.bookmarkId === item.bookmarkId && dl.imageIndex === item.imageIndex);
-            if (reportItem) {
-                reportItem.status = 'fixed';
-                reportItem.deadCatboxUrl = reportItem.deadCatboxUrl || reportItem.catboxUrl || deadUrl;
-                reportItem.fixedCatboxUrl = newUrl;
-                GM_setValue(DEAD_REPORT_KEY, report);
-            }
-        }
-
-        statusBadge.innerText = '✅ Corrigido manualmente';
-        statusBadge.style.background = 'rgba(34,197,94,0.1)';
-        statusBadge.style.color = '#22c55e';
-        statusBadge.style.borderColor = 'rgba(34,197,94,0.2)';
-        
-        manualBtn.style.display = 'none';
-        reuploadBtn.style.display = 'none';
-        updateGalleryContent();
-        showToast('Bookmark atualizado com sucesso');
-    }
-
 
     // Primeira varredura após 30 segundos para não impactar carregamento inicial
     setTimeout(() => {
@@ -5615,15 +5346,16 @@
         setInterval(() => periodicBackupScan(false), BACKUP_SCAN_INTERVAL);
     }, 30000);
 
+
     // ==================== FLOATING BUTTON ====================
     function createFloatingButton() {
-        if (document.getElementById('x-bookmark-fab')) return;
+        if (document.getElementById('pinboard-fab')) return;
 
         const settings = getSettings();
 
         // Criar o botão com estilo nativo do X
         const fab = document.createElement('button');
-        fab.id = 'x-bookmark-fab';
+        fab.id = 'pinboard-fab';
         fab.setAttribute('role', 'button');
         fab.setAttribute('type', 'button');
         fab.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5zM6.5 4c-.276 0-.5.22-.5.5v14.56l6-4.29 6 4.29V4.5c0-.28-.224-.5-.5-.5h-11z"></path></svg>`;
@@ -5695,7 +5427,7 @@
 
         const settings = getSettings();
         const shortcuts = settings.shortcuts || DEFAULT_SETTINGS.shortcuts;
-        const gallery = document.getElementById('x-bookmark-gallery');
+        const gallery = document.getElementById('pinboard-gallery');
         const isGalleryOpen = gallery && gallery.style.display !== 'none';
         const isInputFocused = document.activeElement?.tagName === 'INPUT' ||
             document.activeElement?.tagName === 'TEXTAREA' ||
@@ -5740,7 +5472,7 @@
         // Toggle Grid/Lista
         if (matchesShortcut(e, shortcuts.toggleView)) {
             e.preventDefault();
-            const viewToggle = document.getElementById('x-bookmark-view-toggle');
+            const viewToggle = document.getElementById('pinboard-view-toggle');
             if (viewToggle) viewToggle.click();
             return;
         }

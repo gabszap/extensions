@@ -13,14 +13,14 @@ Upgrades the YouTube Music web app with playlist pinning/hiding, homepage sectio
 
 [**Install**](https://github.com/gabszap/extensions/raw/refs/heads/main/YTM-Enhanced/ytm-enhanced.main.user.js) | [Documentation](./YTM-Enhanced/README.md)
 
-### [X Bookmark](./x-bookmark/)
+### [Pinboard](./pinboard/)
 
-![Version](https://img.shields.io/badge/version-2.6.78-2ea44f)
+![Version](https://img.shields.io/badge/version-2.7.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 
-Replaces X/Twitter's Grok button with a full local bookmark system. Features a gallery with grid/list views, tag management, image merging, Catbox.moe cloud backup, auto-tag rules, and dead link detection.
+Replaces X/Twitter's Grok button with a full local bookmark system. Features a gallery with grid/list views, tag management, image merging, Telegram cloud backup, auto-tag rules.
 
-[**Install**](https://github.com/gabszap/extensions/raw/refs/heads/main/x-bookmark/x-bookmark.user.js) | [Documentation](./x-bookmark/README.md)
+[**Install**](https://github.com/gabszap/extensions/raw/refs/heads/main/pinboard/pinboard.user.js) | [Documentation](./pinboard/README.md)
 
 ## Requirements
 
@@ -33,8 +33,8 @@ Replaces X/Twitter's Grok button with a full local bookmark system. Features a g
 extensions/
   YTM-Enhanced/             YouTube Music userscript
     ytm-enhanced.main.user.js
-  x-bookmark/               X/Twitter bookmark userscript
-    x-bookmark.user.js
+  pinboard/               X/Twitter bookmark userscript
+    pinboard.user.js
   assets/                   Shared SVG/PNG icons
 ```
 

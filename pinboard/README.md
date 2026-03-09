@@ -1,6 +1,6 @@
 # Pinboard
 
-![Version](https://img.shields.io/badge/version-2.7.1-2ea44f)
+![Version](https://img.shields.io/badge/version-2.7.2-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 ![Type](https://img.shields.io/badge/type-userscript-1f6feb)
 ![Browsers](https://img.shields.io/badge/browsers-Chromium%20%7C%20Firefox-6f42c1)

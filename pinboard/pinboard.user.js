@@ -8,7 +8,8 @@
 // @grant       GM_xmlhttpRequest
 // @grant       GM_download
 // @connect     api.telegram.org
-// @version     2.7.1
+// @connect     api.vxtwitter.com
+// @version     2.7.2
 // @author      gabszap
 // @description Adds an internal bookmark system and tags to X, replacing the Grok button.
 // ==/UserScript==
@@ -32,6 +33,7 @@
     const ICON_DOWNLOAD = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>`;
     const ICON_STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l2.037 6.27a1 1 0 0 0 .95.69h6.593c.969 0 1.371 1.24.588 1.81l-5.334 3.876a1 1 0 0 0-.364 1.118l2.037 6.27c.3.922-.755 1.688-1.539 1.118l-5.334-3.876a1 1 0 0 0-1.176 0l-5.334 3.876c-.783.57-1.838-.196-1.539-1.118l2.037-6.27a1 1 0 0 0-.364-1.118L.881 11.697c-.783-.57-.38-1.81.588-1.81h6.593a1 1 0 0 0 .95-.69z"/></svg>`;
     const ICON_MERGE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="10" rx="2"/><rect x="11" y="11" width="10" height="10" rx="2"/></svg>`;
+    const ICON_VIDEO = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>`;
     const ICON_PENCIL_SMALL = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
     const ICON_USER = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     const ICON_CLOUD = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`;
@@ -58,6 +60,8 @@
         listPreviewSize: 80,
         gridPhotoHeight: 300,
         galleryTitle: 'Meus Bookmarks',
+        autoTagVideos: true,
+        autoplayVideos: true,
         shortcuts: {
             openGallery: 'ctrl+b',
             closeModal: 'escape',
@@ -205,6 +209,9 @@
         if (src.includes('|')) src = src.split('|')[0];
 
         if (src.includes('twimg.com')) {
+            // Ignorar vídeos
+            if (src.includes('.mp4') || src.includes('video.twimg.com')) return src;
+            
             // Forçar resolução máxima 4k
             if (src.includes('name=')) return src.replace(/name=[^&]+/, 'name=4096x4096');
             if (src.includes('?')) return src + '&name=4096x4096';
@@ -222,12 +229,14 @@
 
     function guessImageExtension(mimeType, fallbackUrl) {
         const type = (mimeType || '').toLowerCase();
+        if (type.includes('mp4') || type.includes('video')) return 'mp4';
         if (type.includes('png')) return 'png';
         if (type.includes('webp')) return 'webp';
         if (type.includes('gif')) return 'gif';
         if (type.includes('jpeg') || type.includes('jpg')) return 'jpg';
 
         const cleanUrl = (fallbackUrl || '').split('?')[0].toLowerCase();
+        if (cleanUrl.endsWith('.mp4')) return 'mp4';
         if (cleanUrl.endsWith('.png')) return 'png';
         if (cleanUrl.endsWith('.webp')) return 'webp';
         if (cleanUrl.endsWith('.gif')) return 'gif';
@@ -357,6 +366,8 @@
         if (!token || !chatId) {
             return Promise.reject(new Error('Telegram não configurado: insira o token e o Chat ID nas configurações'));
         }
+        
+        const isVideo = filename.toLowerCase().endsWith('.mp4');
 
         const sendPhoto = () => {
             return new Promise((resolve) => {
@@ -401,6 +412,43 @@
             });
         };
 
+        const sendVideo = () => {
+            return new Promise((resolve, reject) => {
+                const formData = new FormData();
+                formData.append('chat_id', chatId);
+                if (threadId) formData.append('message_thread_id', threadId);
+
+                if (typeof blob === 'string') {
+                    formData.append('video', blob);
+                } else {
+                    formData.append('video', blob, filename);
+                }
+                if (caption) formData.append('caption', caption);
+
+                if (getSettings().debugMode) console.log(`[pinboard] sendVideo disparado para chat_id=${chatId}, topic=${threadId}`);
+
+                GM_xmlhttpRequest({
+                    method: 'POST',
+                    url: `https://api.telegram.org/bot${token}/sendVideo`,
+                    data: formData,
+                    onload: (response) => {
+                        try {
+                            const data = JSON.parse(response.responseText);
+                            if (!data.ok) {
+                                reject(new Error(data.description || 'Telegram API error no sendVideo'));
+                                return;
+                            }
+                            const fileId = data.result?.video?.file_id;
+                            resolve(fileId ? `tg:${fileId}` : null);
+                        } catch (e) {
+                            reject(new Error('Resposta inválida do Telegram no sendVideo'));
+                        }
+                    },
+                    onerror: () => reject(new Error('Falha de rede no upload para o Telegram'))
+                });
+            });
+        };
+
         const sendDocument = () => {
             return new Promise((resolve, reject) => {
                 const formData = new FormData();
@@ -439,7 +487,11 @@
         };
 
         try {
-            if (mode === 'photo') {
+            if (isVideo) {
+                // Força envio como vídeo/documento (Photo API não suporta mp4)
+                if (mode === 'document') return await sendDocument();
+                return await sendVideo();
+            } else if (mode === 'photo') {
                 const photoId = await sendPhoto();
                 if (!photoId) throw new Error('Falha ao enviar foto');
                 return photoId;
@@ -712,6 +764,11 @@
             return null;
         }
 
+        if (bookmark.images.some(url => (url || '').toLowerCase().includes('.mp4'))) {
+            showToast('Não é possível mesclar posts que contêm vídeos');
+            return null;
+        }
+
         if (mergeInProgressIds.has(bookmark.id)) {
             showToast('Mescla já em andamento para este post');
             return null;
@@ -887,7 +944,7 @@
 
         bookmark.images.forEach((img, idx) => {
             const { url } = getImageUrl(bookmark, idx);
-            const ext = url.includes('.png') ? 'png' : 'jpg';
+            const ext = url.includes('.mp4') ? 'mp4' : (url.includes('.png') ? 'png' : 'jpg');
             const filename = `${handle}_${postId}_${idx + 1}.${ext}`;
 
             // Delay para evitar sobrecarga
@@ -924,7 +981,7 @@
 
                 bookmark.images.forEach((img, idx) => {
                     const { url } = getImageUrl(bookmark, idx);
-                    const ext = url.includes('.png') ? 'png' : 'jpg';
+                    const ext = url.includes('.mp4') ? 'mp4' : (url.includes('.png') ? 'png' : 'jpg');
                     const filename = `@${handle}_${postId}_${idx + 1}.${ext}`;
 
                     setTimeout(() => downloadImage(url, filename), delayOffset * 300);
@@ -950,6 +1007,8 @@
             saveBookmarks(bookmarks);
             return { action: 'removed', bookmarkId: null };
         } else {
+            const settings = getSettings();
+            
             // Auto-tag por regras (@username → tag)
             const rules = getAutotagRules();
             const handle = '@' + extractHandle(bookmark.postUrl);
@@ -959,6 +1018,20 @@
                     bookmark.tags.push(rule.tag);
                 }
             });
+            
+            // Auto-tag para vídeos
+            if (settings.autoTagVideos) {
+                const hasVideo = bookmark.images && bookmark.images.some(u => (u || '').toLowerCase().includes('.mp4'));
+                if (hasVideo && !bookmark.tags.includes('video')) {
+                    bookmark.tags.push('video');
+                    // Add 'video' to the global tags list if it doesn't exist
+                    const globalTags = getTags();
+                    if (!globalTags.includes('video')) {
+                        saveTags([...globalTags, 'video']);
+                    }
+                }
+            }
+
             bookmarks.push(bookmark);
             saveBookmarks(bookmarks);
             return { action: 'added', bookmarkId: bookmark.id };
@@ -1964,13 +2037,18 @@
             content.appendChild(resetBtn);
         }));
 
-        // Sliders para Aparência (adicionados após seção Aparência existente)
+            // Sliders para Aparência (adicionados após seção Aparência existente)
         const appearanceSection = settingsContainer.querySelector('div');
         if (appearanceSection) {
             const appearanceContent = appearanceSection.querySelector('div:last-child');
             if (appearanceContent && appearanceContent.style.display === 'flex') {
                 appearanceContent.appendChild(createSliderRow('Tamanho do preview (Lista)', 'Tamanho da miniatura no modo lista', 'listPreviewSize', 40, 150, 'px'));
                 appearanceContent.appendChild(createSliderRow('Altura das fotos (Grid)', 'Altura das imagens no modo grid', 'gridPhotoHeight', 150, 500, 'px'));
+                
+                // Opções de vídeo
+                appearanceContent.appendChild(document.createElement('hr')).style.cssText = 'border: none; border-top: 1px solid #333; margin: 10px 0;';
+                appearanceContent.appendChild(createToggleRow('Reproduzir vídeos automaticamente', 'Tocar vídeos nas miniaturas da galeria sem som', 'autoplayVideos'));
+                appearanceContent.appendChild(createToggleRow('Criar tag "video" automática', 'Adiciona a tag "video" sempre que salvar mídias em mp4', 'autoTagVideos'));
             }
         }
 
@@ -3264,55 +3342,99 @@
             button.setAttribute('aria-label', 'Bookmark Interno');
             button.title = 'Salvar/Remover Bookmark Interno';
 
-            button.addEventListener('click', (e) => {
+            button.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
 
                 if (!postUrl) return;
 
-                const allImgElements = article.querySelectorAll('div[data-testid="tweetPhoto"] img');
+                const allImgElements = article.querySelectorAll('div[data-testid="tweetPhoto"] img, div[data-testid="videoComponent"] video, div[data-testid="videoComponent"] img, div[data-testid="videoPlayer"] video, div[data-testid="videoPlayer"] img');
                 const quotedContainer = article.querySelector('[data-testid="quotedTweet"]')
                     || article.querySelector('[data-testid="testCondensedMedia"]')
                     || article.querySelector('[role="link"][tabindex="0"] > div');
 
-                const images = Array.from(allImgElements).filter(img => {
-                    if (quotedContainer && quotedContainer.contains(img)) return false;
+                let hasVideos = false;
+                let images = Array.from(allImgElements).filter(el => {
+                    if (quotedContainer && quotedContainer.contains(el)) return false;
                     return true;
-                }).map(img => {
-                    let src = img.src;
+                }).map(el => {
+                    let src = el.tagName.toLowerCase() === 'video' ? el.poster : el.src;
+                    if (el.tagName.toLowerCase() === 'video') hasVideos = true;
+                    if (!src) return '';
+                    if (src.includes('video_thumb') || src.includes('ext_tw_video_thumb') || src.includes('tweet_video_thumb')) hasVideos = true;
                     // Criar URL com 4096x4096 (máxima qualidade)
-                    if (src.includes('name=')) {
-                        return src.replace(/name=[^&]+/, 'name=4096x4096');
-                    } else if (src.includes('?')) {
-                        return src + '&name=4096x4096';
-                    } else {
-                        return src;
+                    if (el.tagName.toLowerCase() === 'img') {
+                        if (src.includes('name=')) {
+                            return src.replace(/name=[^&]+/, 'name=4096x4096');
+                        } else if (src.includes('?')) {
+                            return src + '&name=4096x4096';
+                        }
                     }
-                });
+                    return src;
+                }).filter(Boolean);
 
                 // Fallback: Se não encontrou imagens no article, tentar buscar do lightbox
                 if (images.length === 0) {
                     // Lightbox do Twitter geralmente tem a imagem em um layer separado
                     const lightboxImg = document.querySelector('[data-testid="swipe-to-dismiss"] img[src*="pbs.twimg.com/media"]')
                         || document.querySelector('[role="dialog"] img[src*="pbs.twimg.com/media"]')
-                        || document.querySelector('div[aria-modal="true"] img[src*="pbs.twimg.com/media"]');
+                        || document.querySelector('div[aria-modal="true"] img[src*="pbs.twimg.com/media"]')
+                        || document.querySelector('[role="dialog"] video')
+                        || document.querySelector('div[aria-modal="true"] video');
 
                     if (lightboxImg) {
-                        let src = lightboxImg.src;
-                        let primaryUrl;
-                        if (src.includes('name=')) {
-                            primaryUrl = src.replace(/name=[^&]+/, 'name=4096x4096');
-                        } else if (src.includes('?')) {
-                            primaryUrl = src + '&name=4096x4096';
-                        } else {
-                            primaryUrl = src;
+                        let src = lightboxImg.tagName.toLowerCase() === 'video' ? lightboxImg.poster : lightboxImg.src;
+                        if (lightboxImg.tagName.toLowerCase() === 'video') hasVideos = true;
+                        if (src && (src.includes('video_thumb') || src.includes('ext_tw_video_thumb'))) hasVideos = true;
+                        let primaryUrl = src;
+                        if (lightboxImg.tagName.toLowerCase() === 'img') {
+                            if (src.includes('name=')) {
+                                primaryUrl = src.replace(/name=[^&]+/, 'name=4096x4096');
+                            } else if (src.includes('?')) {
+                                primaryUrl = src + '&name=4096x4096';
+                            }
                         }
-                        images.push(primaryUrl);
+                        if (primaryUrl) images.push(primaryUrl);
+                    }
+                }
+
+                if (hasVideos) {
+                    showBookmarkToast('Extraindo vídeo...', false);
+                    try {
+                        const urlObj = new URL(postUrl);
+                        const vxUrl = `https://api.vxtwitter.com${urlObj.pathname}`;
+                        const vxResponse = await new Promise((resolve) => {
+                            GM_xmlhttpRequest({
+                                method: 'GET',
+                                url: vxUrl,
+                                onload: (res) => resolve(res.responseText),
+                                onerror: (err) => {
+                                    console.error('[pinboard] Erro no GM_xmlhttpRequest (provável bloqueio de permissão):', err);
+                                    resolve(null);
+                                }
+                            });
+                        });
+                        
+                        if (vxResponse) {
+                            const data = JSON.parse(vxResponse);
+                            if (data && data.media_extended && data.media_extended.length > 0) {
+                                // Substituir completamente o array pelo que a API encontrou (que possui os links originais dos vídeos e fotos corretos do post principal)
+                                images = data.media_extended.map(m => m.url);
+                            } else {
+                                showBookmarkToast('Aviso: API não retornou a mídia', false);
+                            }
+                        } else {
+                            showBookmarkToast('Aviso: Permita o api.vxtwitter.com no Violentmonkey', true);
+                            console.error('[pinboard] API vxtwitter retornou nulo. A permissão "@connect api.vxtwitter.com" foi concedida?');
+                        }
+                    } catch (err) {
+                        console.error('[pinboard] Erro ao buscar vídeo da API vxtwitter:', err);
+                        showBookmarkToast('Falha ao obter vídeo', false);
                     }
                 }
 
                 if (images.length === 0 && !isBookmarked(postUrl)) {
-                    alert('Nenhuma imagem encontrada no seu post principal.');
+                    alert('Nenhuma imagem ou vídeo encontrado no seu post principal.');
                     return;
                 }
 
@@ -3513,7 +3635,7 @@
         // Bulk Actions Container
         const bulkContainer = document.createElement('div');
         bulkContainer.id = 'pinboard-bulk-actions';
-        bulkContainer.style = 'display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10001; align-items: center; flex-wrap: wrap; justify-content: center; gap: 10px; width: max-content; max-width: calc(100vw - 24px); padding: 10px 12px; border-radius: 16px; border: 1px solid #2f2f2f; background: rgba(18,18,18,0.92); backdrop-filter: blur(8px); box-shadow: 0 10px 26px rgba(0,0,0,0.45);';
+        bulkContainer.style = 'display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10000; align-items: center; flex-wrap: wrap; justify-content: center; gap: 10px; width: max-content; max-width: calc(100vw - 24px); padding: 10px 12px; border-radius: 16px; border: 1px solid #2f2f2f; background: rgba(18,18,18,0.92); backdrop-filter: blur(8px); box-shadow: 0 10px 26px rgba(0,0,0,0.45);';
 
         const bulkInfo = document.createElement('span');
         bulkInfo.id = 'pinboard-bulk-info';
@@ -3804,11 +3926,22 @@
                 const previewSize = settings.listPreviewSize;
                 item.style = 'background: #15181c; border-radius: 12px; overflow: hidden; border: 1px solid #333; display: flex; gap: 15px; padding: 12px; align-items: center;';
 
-                const thumb = document.createElement('img');
                 const hasMerged = !!b.mergedImageUrl;
                 const thumbData = hasMerged
                     ? { url: b.mergedImageUrl, isFallback: false, hasTelegramBackup: true }
                     : getImageUrl(b, 0);
+
+                const thumbWrapper = document.createElement('div');
+                thumbWrapper.style = `width: ${previewSize}px; height: ${previewSize}px; position: relative; flex-shrink: 0;`;
+
+                const isVideo = (b.images?.[0] || '').toLowerCase().includes('.mp4');
+                const thumb = document.createElement(isVideo && !hasMerged ? 'video' : 'img');
+                if (isVideo && !hasMerged) {
+                    thumb.muted = true;
+                    thumb.loop = true;
+                    thumb.autoplay = settings.autoplayVideos !== false;
+                    thumb.setAttribute('playsinline', '');
+                }
 
                 if (hasMerged && b.mergedImageUrl.startsWith('tg:')) {
                     thumb.src = '';
@@ -3820,12 +3953,26 @@
                     thumb.src = thumbData.url || '';
                 }
 
-                thumb.style = `width: ${previewSize}px; height: ${previewSize}px; object-fit: cover; border-radius: 8px; cursor: pointer; flex-shrink: 0; ${thumbData.isFallback && b.catboxUrls ? 'border: 2px solid #f59e0b;' : ''}`;
+                thumb.style = `width: 100%; height: 100%; object-fit: cover; border-radius: 8px; cursor: pointer; ${thumbData.isFallback && b.catboxUrls ? 'border: 2px solid #f59e0b;' : ''}`;
                 if (hasMerged) {
                     thumb.title = '🧩 Usando imagem mesclada salva';
                 } else if (thumbData.isFallback && b.catboxUrls) {
                     thumb.title = '⚠️ Usando imagem do Twitter (backup falhou)';
                 }
+                
+                thumbWrapper.appendChild(thumb);
+                
+                if (b.images && b.images.some(u => (u || '').toLowerCase().includes('.mp4'))) {
+                    const videoBadge = document.createElement('div');
+                    videoBadge.className = 'video-badge';
+                    videoBadge.innerHTML = ICON_VIDEO;
+                    videoBadge.title = 'Contém vídeo';
+                    videoBadge.style = 'position: absolute; top: 4px; right: 4px; background: rgba(239,68,68,0.95); color: white; padding: 4px; border-radius: 6px; display: flex; align-items: center; justify-content: center; z-index: 7; cursor: help; pointer-events: none;';
+                    videoBadge.querySelector('svg').setAttribute('width', '12');
+                    videoBadge.querySelector('svg').setAttribute('height', '12');
+                    thumbWrapper.appendChild(videoBadge);
+                }
+
                 // Fallback chain: 4096x4096 → large → Telegram
                 thumb.onerror = () => {
                     thumb.dataset.failedAttempts = thumb.dataset.failedAttempts || '';
@@ -3876,8 +4023,14 @@
                 thumb.onclick = () => (b.images?.length > 1 || b.mergedImageUrl) ? showDetails(b) : window.open(thumbData.url, '_blank');
 
                 // Preview no hover
-                thumb.onmouseenter = (e) => showPreview(e, b.mergedImageUrl || b.images?.[0]);
-                thumb.onmouseleave = hidePreview;
+                thumb.onmouseenter = (e) => {
+                    showPreview(e, b.mergedImageUrl || b.images?.[0]);
+                    if (thumb.tagName.toLowerCase() === 'video') thumb.play().catch(()=>{});
+                };
+                thumb.onmouseleave = () => {
+                    hidePreview();
+                    if (thumb.tagName.toLowerCase() === 'video' && settings.autoplayVideos === false) thumb.pause();
+                };
 
                 const info = document.createElement('div');
                 info.style = 'flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden;';
@@ -3948,7 +4101,7 @@
                 downloadBtn.onclick = (e) => { e.stopPropagation(); downloadBookmarkImages(b); };
 
                 item.appendChild(checkbox);
-                item.appendChild(thumb);
+                item.appendChild(thumbWrapper);
                 item.appendChild(info);
                 item.appendChild(downloadBtn);
                 item.appendChild(viewPostBtn);
@@ -3960,8 +4113,16 @@
             const settings = getSettings();
             const gridHeight = settings.gridPhotoHeight;
             item.style = 'background: #15181c; border-radius: 16px; overflow: hidden; position: relative; border: 1px solid #333; transition: transform 0.2s;';
-            item.onmouseover = () => item.style.transform = 'scale(1.02)';
-            item.onmouseout = () => item.style.transform = 'scale(1)';
+            item.onmouseover = () => {
+                item.style.transform = 'scale(1.02)';
+                const video = item.querySelector('video');
+                if (video) video.play().catch(()=>{});
+            };
+            item.onmouseout = () => {
+                item.style.transform = 'scale(1)';
+                const video = item.querySelector('video');
+                if (video && settings.autoplayVideos === false) video.pause();
+            };
 
             const imgContainer = document.createElement('div');
             const hasMerged = !!b.mergedImageUrl;
@@ -3974,8 +4135,8 @@
                 if (numImgs > 1 || hasMerged) {
                     showDetails(b);
                 } else {
-                    // Usar URL atual da imagem (pode ser Catbox ou Twitter após fallback)
-                    const currentImg = imgContainer.querySelector('img');
+                    // Usar URL atual da imagem ou vídeo
+                    const currentImg = imgContainer.querySelector('img, video');
                     const urlToOpen = currentImg ? currentImg.src : (getImageUrl(b, 0).url || b.images[0]);
                     window.open(urlToOpen, '_blank');
                 }
@@ -3995,7 +4156,14 @@
             }
 
             displayImages.forEach((src, idx) => {
-                const img = document.createElement('img');
+                const isVideo = (src || '').toLowerCase().includes('.mp4');
+                const img = document.createElement(isVideo && !hasMerged ? 'video' : 'img');
+                if (isVideo && !hasMerged) {
+                    img.muted = true;
+                    img.loop = true;
+                    img.autoplay = settings.autoplayVideos !== false;
+                    img.setAttribute('playsinline', '');
+                }
                 const imgData = hasMerged
                     ? { url: b.mergedImageUrl, hasTelegramBackup: true }
                     : getImageUrl(b, idx);
@@ -4058,7 +4226,7 @@
                                 fallbackBadge.className = 'fallback-badge main-badge';
                                 fallbackBadge.innerHTML = '⚠️';
                                 fallbackBadge.title = 'Twitter indisponível (usando backup)';
-                                const badgeCount = imgContainer.querySelectorAll('.main-badge, .merge-badge, .favorite-badge').length;
+                                const badgeCount = imgContainer.querySelectorAll('.main-badge, .merge-badge, .video-badge, .favorite-badge').length;
                                 const rightOffset = 10 + (badgeCount * 30);
                                 fallbackBadge.style = `position: absolute; top: 10px; right: ${rightOffset}px; background: rgba(245,158,11,0.95); color: white; padding: 4px 6px; border-radius: 6px; font-size: 12px; z-index: 7;`;
                                 imgContainer.appendChild(fallbackBadge);
@@ -4097,7 +4265,7 @@
             // Indicador de status do backup
             if (!settings.hideOverlays) {
                 const nextTopRightBadgeOffset = () => {
-                    const badgeCount = imgContainer.querySelectorAll('.main-badge, .merge-badge, .favorite-badge').length;
+                    const badgeCount = imgContainer.querySelectorAll('.main-badge, .merge-badge, .video-badge, .favorite-badge').length;
                     return 10 + (badgeCount * 30);
                 };
 
@@ -4143,6 +4311,16 @@
                     mergeBadge.style.right = `${nextTopRightBadgeOffset()}px`;
 
                     imgContainer.appendChild(mergeBadge);
+                }
+
+                if (b.images && b.images.some(u => (u || '').toLowerCase().includes('.mp4'))) {
+                    const videoBadge = document.createElement('div');
+                    videoBadge.className = 'video-badge';
+                    videoBadge.innerHTML = ICON_VIDEO;
+                    videoBadge.title = 'Contém vídeo';
+                    videoBadge.style = 'position: absolute; top: 10px; right: 10px; background: rgba(239,68,68,0.95); color: white; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; z-index: 7; cursor: help;';
+                    videoBadge.style.right = `${nextTopRightBadgeOffset()}px`;
+                    imgContainer.appendChild(videoBadge);
                 }
 
                 if (b.isFavorite) {
@@ -4577,7 +4755,11 @@
                 const item = document.createElement('div');
                 item.style = 'background: #15181c; border-radius: 16px; overflow: hidden; border: 1px solid #333; width: 280px;';
 
-                const img = document.createElement('img');
+                const isVideo = (src || '').toLowerCase().includes('.mp4');
+                const img = document.createElement(isVideo ? 'video' : 'img');
+                if (isVideo) {
+                    img.controls = true;
+                }
                 // Usar formatTwitterUrl para garantir 4k
                 img.src = formatTwitterUrl(src);
                 img.style = 'width: 100%; height: 280px; object-fit: cover; cursor: pointer; display: block;';
@@ -4630,7 +4812,10 @@
                     }
                 };
 
-                img.onclick = () => window.open(img.src, '_blank');
+                img.onclick = () => {
+                    const srcToOpen = img.tagName.toLowerCase() === 'video' ? formatTwitterUrl(src) : img.src;
+                    window.open(srcToOpen, '_blank');
+                };
 
                 item.appendChild(img);
                 imgList.appendChild(item);
@@ -4663,7 +4848,10 @@
                 });
             } else {
                 img.src = url;
-                img.onclick = () => window.open(url, '_blank');
+                img.onclick = () => {
+                    const srcToOpen = img.tagName.toLowerCase() === 'video' ? url : img.src;
+                    window.open(srcToOpen, '_blank');
+                };
             }
 
             item.appendChild(meta);
@@ -4924,7 +5112,14 @@
                     background: #15181c; flex-shrink: 0; position: relative;
                 `;
 
-                const thumb = document.createElement('img');
+                const isVideo = (url || '').toLowerCase().includes('.mp4');
+                const thumb = document.createElement(isVideo ? 'video' : 'img');
+                if (isVideo) {
+                    thumb.muted = true;
+                    thumb.loop = true;
+                    thumb.autoplay = getSettings().autoplayVideos !== false;
+                    thumb.setAttribute('playsinline', '');
+                }
                 thumb.src = formatTwitterUrl(url) || '';
                 thumb.style = 'width: 100%; height: 100%; object-fit: cover;';
                 thumb.onerror = () => {
@@ -5170,7 +5365,18 @@
             padding: 5px; box-shadow: 0 10px 40px rgba(0,0,0,0.8);
         `;
 
-        const img = document.createElement('img');
+        const isVideo = (src || '').toLowerCase().includes('.mp4');
+        const img = document.createElement(isVideo ? 'video' : 'img');
+        if (isVideo) {
+            img.muted = true;
+            img.loop = true;
+            img.autoplay = true; // Sempre tocar no hover
+            img.setAttribute('playsinline', '');
+            // Para garantir autoplay dinâmico em alguns browsers, forçar play ao ser anexado
+            setTimeout(() => {
+                if (document.body.contains(img)) img.play().catch(() => {});
+            }, 50);
+        }
         img.src = src;
         img.style = 'max-width: 400px; max-height: 400px; border-radius: 8px; display: block;';
         previewEl.appendChild(img);

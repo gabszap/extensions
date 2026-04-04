@@ -95,9 +95,26 @@ Floating action bar when items are selected:
 
 ## Requirements
 
+### Userscript
 - A userscript manager — [Violentmonkey](https://violentmonkey.github.io/) (recommended) or [Tampermonkey](https://www.tampermonkey.net/)
 - Chromium- or Firefox-based browser
 - X / Twitter at `https://x.com/`
+
+### Telegram Bot (optional, for helper commands)
+- Node.js 18+ (uses native `fetch`, `Blob`, `FormData`)
+- Python 3 with [gallery-dl](https://github.com/mikf/gallery-dl) installed (`pip install gallery-dl`)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed and in PATH
+- [FFmpeg](https://ffmpeg.org/download.html) installed and in PATH (required by yt-dlp for merging video+audio streams)
+- A `cookies.txt` file inside `gallery-dl/` (for gallery-dl authenticated Instagram downloads)
+- A Telegram Bot Token in a `.env` file (`TELEGRAM_BOT_TOKEN=your_token`)
+
+#### How to get cookies.txt for Instagram
+1. Install the browser extension **[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)** (Chrome) or [its Firefox equivalent](https://addons.mozilla.org/en-US/firefox/addon/get-cookies-txt-locally/).
+2. Log into Instagram on a browser tab.
+   > **Tip:** Use an **alt account** to export cookies — gallery-dl makes frequent requests that can trigger Instagram's rate limits or security checks. Using your main account risks a temporary ban or verification lock.
+3. Click the extension icon, select **Netscape HTTP Cookie File** format, and save as `cookies.txt`.
+4. Place the file inside the `gallery-dl/` folder.
+5. Re-export periodically — Instagram session cookies expire after a while.
 
 ## Installation
 
@@ -154,6 +171,7 @@ To enable cloud backup to your own private Telegram conversation:
 3. Paste both your **Bot Token** and **Chat ID**.
 4. Test the bot connection using the migration tool or by bookmarking a new post.
 5. Choose between **Document** (lossless) or **Photo** (compressed) modes.
+   > **Note:** In practice, visible quality loss from Telegram's photo compression is rare. The image file is identical to the original — it just takes a moment longer to load on Telegram's side due to server-side processing.
 6. Check the "Auto-backup" toggle to automatically upload images going forward.
 
 ### Editing Images (Helper Bot Script)
@@ -169,6 +187,26 @@ If an image fails to upload properly or is glitched, you can fix it natively via
    ```
 3. In your Telegram app, **reply** to the glitched message from your bot.
 4. Keep the original text empty, attach the **new, correct image**, and type `/edit` in the caption. The bot will instantly replace the media and preserve the original Twitter link text. You can also do `/edit New Caption` to overwrite the text.
+
+### Bot Commands Reference
+
+| Command | Description |
+|---|---|
+| `/edit` | Reply to a bot message with a new image + `/edit` in the caption to replace broken media. |
+| `/edit New Caption` | Replace media AND update the caption text. |
+| `/edit -ai` | Append ` \| Feito por IA` to the caption. |
+| `/edit -sus` | Append ` \| Possivelmente IA` to the caption. |
+| `/edit -s` | Silent mode — auto-deletes the command and success messages after 5s. |
+| `/baixar <url>` or `/dl <url>` | Download media from a URL and send to the chat. Supports Instagram (via gallery-dl) and other sites (via yt-dlp). |
+| `/baixar <url> -ai` | Download and tag as ` \| Feito por IA`. |
+| `/baixar <url> -sus` | Download and tag as ` \| Possivelmente IA`. |
+| `/baixar <url> -s` | Silent mode — deletes the command message after completion. |
+| `/impersonate` | Reply to a message to repost it as the bot. Supports photos, videos, GIFs, documents, and text. |
+| `/impersonate -d` | Also sends the media as a document alongside the normal send. |
+| `/search` | Reply to a message containing an Instagram link to find the post's author. The bot sends `@username — <url>` as a new message. |
+| `/start` or `/help` | Show help message with all available commands. |
+
+**Flags** can be combined: `/baixar <url> -sus -s` downloads, tags as possibly AI, and runs silently.
 
 ## Settings
 
@@ -192,7 +230,6 @@ All data is stored via `GM_setValue`/`GM_getValue` in the userscript manager.
 | `x_bookmark_tags` | `string[]` | Tag list with order |
 | `x_bookmark_settings` | `object` | All settings |
 | `x_bookmark_autotag_rules` | `object[]` | Auto-tag rules |
-
 | `x_bookmark_view_mode` | `string` | `grid` / `list` preference |
 
 ## Project Structure

@@ -6,7 +6,7 @@ A collection of browser userscripts that enhance web applications with better co
 
 ### [YT-Music Enhancer](./YTM-Enhanced/)
 
-![Version](https://img.shields.io/badge/version-1.46-2ea44f)
+![Version](https://img.shields.io/badge/version-1.5.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-YouTube%20Music-ff0000)
 
 Upgrades the YouTube Music web app with playlist pinning/hiding, homepage section debloating, context menu cleanup, volume controls, and a themeable settings panel.

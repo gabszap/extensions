@@ -4,8 +4,10 @@
 // @match       *://music.youtube.com/*
 // @grant       GM_getValue
 // @grant       GM_setValue
+// @grant       GM_addStyle
 // @grant       unsafeWindow
-// @version     1.46
+// @inject-into content
+// @version     1.5.0
 // @author      gabszap
 // @description Script para exibir porcentagem de volume no YouTube Music e outros snippets
 // @updateURL   https://github.com/gabszap/extensions/raw/refs/heads/main/YTM-Enhanced/ytm-enhanced.main.user.js
@@ -29,6 +31,7 @@
   const CONTEXT_MENU_HIDDEN_STORAGE_KEY = "yt-enhancer:hidden-context-menu-items";
   const HIDE_UPGRADE_BUTTON_STORAGE_KEY = "yt-enhancer:hide-upgrade-button";
   const HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY = "yt-enhancer:hide-listen-again-artists";
+  const HIDE_LIBRARY_ARTISTS_STORAGE_KEY = "yt-enhancer:hide-library-artists";
   const HIDDEN_ARTISTS_STORAGE_KEY = "yt-enhancer:hidden-artists";
   const HIDDEN_ARTIST_LABELS_STORAGE_KEY = "yt-enhancer:hidden-artist-labels";
   const HIDDEN_HOMEPAGE_SECTIONS_STORAGE_KEY = "yt-enhancer:hidden-homepage-sections";
@@ -115,6 +118,8 @@
     { id: "pin-to-listen-again", label: "Fixar em Ouvir de novo" },
     { id: "clear-queue", label: "Remover fila" },
     { id: "stats-for-nerds", label: "Estatisticas para nerds" },
+    { id: "not-interested", label: "Não tenho interesse" },
+    { id: "dont-recommend-artist", label: "Não recomendar o artista" },
   ];
 
   const HOMEPAGE_SECTIONS = [
@@ -133,6 +138,7 @@
     { id: "videos-recomendados", label: "Videos de musica recomendados" },
     { id: "paradas", label: "Paradas", hint: "Charts e top musicas" },
     { id: "tocou-nos-shorts", label: "Tocou nos Shorts" },
+    { id: "em-alta-nos-shorts", label: "Em alta nos Shorts" },
     { id: "descobertas-diarias", label: "Suas descobertas diarias" },
     { id: "continuar-ouvindo", label: "Continuar ouvindo" },
     { id: "covers-e-remixes", label: "Covers e remixes" },
@@ -236,59 +242,12 @@
   }
 
   function getScriptVersion() {
-    const managerInfo =
-      globalThis.GM_info ||
-      globalThis.GM?.info ||
-      globalThis.window?.GM_info ||
-      globalThis.window?.GM?.info;
-
-    const metadataCandidates = [
-      managerInfo?.scriptMetaStr,
-      managerInfo?.script?.scriptMetaStr,
-      managerInfo?.script?.metaStr,
-    ];
-
-    for (const metadataString of metadataCandidates) {
-      const parsedVersion = extractVersionFromMetadata(metadataString);
-      if (parsedVersion) {
-        cacheScriptVersion(parsedVersion);
-        return parsedVersion;
-      }
-    }
-
-    const versionCandidates = [
-      managerInfo?.script?.version,
-      managerInfo?.script?.ver,
-    ];
-
-    for (const versionCandidate of versionCandidates) {
-      if (typeof versionCandidate === "string" && versionCandidate.trim()) {
-        const normalizedVersion = versionCandidate.trim();
-        cacheScriptVersion(normalizedVersion);
-        return normalizedVersion;
-      }
-    }
-
-    const currentScriptVersion = extractVersionFromMetadata(
-      document.currentScript?.textContent || "",
-    );
-    if (currentScriptVersion) {
-      cacheScriptVersion(currentScriptVersion);
-      return currentScriptVersion;
-    }
-
-    const pageScripts = Array.from(document.querySelectorAll("script"));
-    for (const scriptElement of pageScripts) {
-      const scriptText = scriptElement.textContent || "";
-      if (!scriptText.includes(SCRIPT_NAME) || !scriptText.includes("@version")) {
-        continue;
-      }
-
-      const scriptVersion = extractVersionFromMetadata(scriptText);
-      if (scriptVersion) {
-        cacheScriptVersion(scriptVersion);
-        return scriptVersion;
-      }
+    const managerInfo = globalThis.GM_info || globalThis.GM?.info;
+    const version = managerInfo?.script?.version;
+    if (typeof version === "string" && version.trim()) {
+      const normalized = version.trim();
+      cacheScriptVersion(normalized);
+      return normalized;
     }
 
     const cachedVersion = getStoredValue(VERSION_CACHE_STORAGE_KEY, "");
@@ -950,6 +909,7 @@
 
   // === LISTEN AGAIN ARTISTS DEBLOAT ===
   let hideListenAgainArtists = getStoredValue(HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY, false);
+  let hideLibraryArtists = getStoredValue(HIDE_LIBRARY_ARTISTS_STORAGE_KEY, false);
   let hiddenArtistKeys = getStoredValue(HIDDEN_ARTISTS_STORAGE_KEY, []);
   let hiddenArtistLabels = getStoredValue(HIDDEN_ARTIST_LABELS_STORAGE_KEY, {});
 
@@ -959,6 +919,11 @@
   function setHideListenAgainArtists(hidden) {
     hideListenAgainArtists = Boolean(hidden);
     setStoredValue(HIDE_LISTEN_AGAIN_ARTISTS_STORAGE_KEY, hideListenAgainArtists);
+  }
+
+  function setHideLibraryArtists(hidden) {
+    hideLibraryArtists = Boolean(hidden);
+    setStoredValue(HIDE_LIBRARY_ARTISTS_STORAGE_KEY, hideLibraryArtists);
   }
 
   function saveHiddenArtists() {
@@ -1018,6 +983,7 @@
       hiddenContextMenuItems = hiddenContextMenuItems.filter((id) => id !== itemId);
     }
     saveHiddenMenuItems();
+    document.dispatchEvent(new CustomEvent("yt-enhancer:context-menu-debloat-change"));
   }
 
   // === HOMEPAGE SECTIONS DEBLOAT ===
@@ -1666,6 +1632,11 @@
   }
 
   // === LIBRARY HIDDEN PLAYLISTS ===
+  function isLibraryPage() {
+    const path = window.location.pathname.toLowerCase();
+    return path === "/library" || path === "/library/" || path.startsWith("/library/playlists");
+  }
+
   function isLibraryPlaylistsPage() {
     const path = window.location.pathname.toLowerCase();
     return path === "/library" || path === "/library/" || path.startsWith("/library/playlists");
@@ -2193,60 +2164,125 @@
     }
   }
 
-  function debloatContextMenu() {
-    if (hiddenContextMenuItems.length === 0) return;
+  // === CONTEXT MENU DEBLOAT ===
+  // Two-phase approach:
+  // 1. Interceptor: catches items as they're added to DOM (BEFORE dropdown measures)
+  // 2. On popup open: hide items synchronously before paint
 
-    const popup = document.querySelector("ytmusic-menu-popup-renderer");
-    if (!popup) return;
+  function hideContextMenuItems(popup) {
+    if (!popup || hiddenContextMenuItems.length === 0) return;
 
-    let didChange = false;
+    const allMenuItems = popup.querySelectorAll(
+      'ytmusic-menu-navigation-item-renderer[role="menuitem"], ytmusic-menu-service-item-renderer[role="menuitem"], ytmusic-toggle-menu-service-item-renderer[role="menuitem"], ytmusic-menu-service-item-download-renderer[role="menuitem"]'
+    );
 
-    const applyVisibility = (item, textEl) => {
+    allMenuItems.forEach((item) => {
+      const textEl = item.querySelector("yt-formatted-string.text") || item.querySelector("yt-formatted-string");
       if (!textEl) return;
       const itemId = matchMenuItemId(textEl.textContent);
       if (itemId && isContextMenuItemHidden(itemId)) {
-        if (item.style.display !== "none") {
+        if (!item.dataset.yteHiddenByScript) {
           item.style.display = "none";
-          didChange = true;
+          item.dataset.yteHiddenByScript = "true";
         }
-      } else if (item.style.display === "none") {
+      } else if (item.dataset.yteHiddenByScript) {
         item.style.display = "";
-        didChange = true;
+        delete item.dataset.yteHiddenByScript;
       }
-    };
-
-    // Standard menu items
-    const menuItems = popup.querySelectorAll(
-      'ytmusic-menu-navigation-item-renderer[role="menuitem"], ytmusic-menu-service-item-renderer[role="menuitem"]'
-    );
-    menuItems.forEach((item) => {
-      applyVisibility(item, item.querySelector("yt-formatted-string.text"));
     });
-
-    // Download item uses a different renderer
-    const downloadItem = popup.querySelector(
-      'ytmusic-menu-service-item-download-renderer[role="menuitem"]'
-    );
-    if (downloadItem) {
-      applyVisibility(downloadItem, downloadItem.querySelector("yt-formatted-string"));
-    }
-
-    // Toggle items (like/unlike, save/remove from library, pin)
-    const toggleItems = popup.querySelectorAll(
-      'ytmusic-toggle-menu-service-item-renderer[role="menuitem"]'
-    );
-    toggleItems.forEach((item) => {
-      applyVisibility(item, item.querySelector("yt-formatted-string.text"));
-    });
-
-    // Refit the iron-dropdown so the popup repositions after hiding items
-    if (didChange) {
-      const dropdown = popup.closest("tp-yt-iron-dropdown");
-      if (dropdown && typeof dropdown.refit === "function") {
-        dropdown.refit();
-      }
-    }
   }
+
+  // Phase 1: Intercept items as they're added to DOM — BEFORE dropdown measures
+  const MENU_ITEM_SELECTOR = 'ytmusic-menu-navigation-item-renderer[role="menuitem"], ytmusic-menu-service-item-renderer[role="menuitem"], ytmusic-toggle-menu-service-item-renderer[role="menuitem"], ytmusic-menu-service-item-download-renderer[role="menuitem"]';
+
+  const menuItemInterceptor = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== 1) continue;
+
+        const processItem = (item) => {
+          const textEl = item.querySelector("yt-formatted-string.text") || item.querySelector("yt-formatted-string");
+          if (!textEl) return;
+          const itemId = matchMenuItemId(textEl.textContent);
+          if (itemId && isContextMenuItemHidden(itemId)) {
+            item.style.display = "none";
+            item.dataset.yteHiddenByScript = "true";
+          } else if (item.dataset.yteHiddenByScript) {
+            item.style.display = "";
+            delete item.dataset.yteHiddenByScript;
+          }
+        };
+
+        if (node.matches && node.matches(MENU_ITEM_SELECTOR)) {
+          processItem(node);
+        }
+
+        if (node.querySelectorAll) {
+          const items = node.querySelectorAll(MENU_ITEM_SELECTOR);
+          items.forEach(processItem);
+        }
+      }
+    }
+  });
+
+  menuItemInterceptor.observe(document.body, { childList: true, subtree: true });
+
+  // Phase 2: When popup opens, hide items synchronously
+  let cmPollInterval = null;
+
+  function startContextMenuPolling() {
+    if (cmPollInterval) return;
+
+    // Run immediately — synchronously
+    const popup = document.querySelector("ytmusic-menu-popup-renderer");
+    if (popup) hideContextMenuItems(popup);
+
+    // Then poll for any items that render late
+    cmPollInterval = setInterval(() => {
+      const popup = document.querySelector("ytmusic-menu-popup-renderer");
+      if (!popup || popup.offsetParent === null) {
+        clearInterval(cmPollInterval);
+        cmPollInterval = null;
+        return;
+      }
+      hideContextMenuItems(popup);
+    }, 16);
+  }
+
+  // Watch for popup appearing as new element
+  const cmObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches && node.matches("ytmusic-menu-popup-renderer")) {
+          startContextMenuPolling();
+          return;
+        }
+        if (node.querySelectorAll && node.querySelector("ytmusic-menu-popup-renderer")) {
+          startContextMenuPolling();
+          return;
+        }
+      }
+    }
+  });
+  cmObserver.observe(document.body, { childList: true, subtree: true });
+
+  // Watch for popup attribute changes (reused element opening)
+  const watchExistingPopup = () => {
+    const popup = document.querySelector("ytmusic-menu-popup-renderer");
+    if (popup) {
+      const attrObs = new MutationObserver(() => {
+        // Check if popup just became visible
+        if (popup.offsetParent !== null || popup.getAttribute("opened") !== null) {
+          startContextMenuPolling();
+        }
+      });
+      attrObs.observe(popup, { attributes: true, attributeFilter: ["opened", "style", "class"] });
+    } else {
+      setTimeout(watchExistingPopup, 1000);
+    }
+  };
+  watchExistingPopup();
 
   function debloatUpgradeButton() {
     const guideEntries = document.querySelectorAll("ytmusic-guide-entry-renderer");
@@ -2349,6 +2385,36 @@
     }
   }
 
+  // === OCULTAR ARTISTAS NA BIBLIOTECA ===
+  function debloatLibraryArtists() {
+    if (!isLibraryPage()) return;
+
+    const gridItems = document.querySelectorAll(
+      "ytmusic-grid-renderer ytmusic-two-row-item-renderer[has-circle-cropped-thumbnail]"
+    );
+
+    for (const item of gridItems) {
+      const link = item.querySelector('a.image-wrapper[href*="channel/"]');
+      const href = link?.getAttribute("href") || "";
+      const channelMatch = href.match(/channel\/([A-Za-z0-9_-]+)/);
+      const channelId = channelMatch ? channelMatch[1] : null;
+      if (!channelId) continue;
+
+      const shouldHide = hideLibraryArtists || isArtistHidden(channelId);
+      if (shouldHide) {
+        if (item.style.display !== "none") {
+          item.style.display = "none";
+          item.dataset.yteHiddenLibraryArtist = "true";
+        }
+      } else {
+        if (item.dataset.yteHiddenLibraryArtist) {
+          item.style.display = "";
+          delete item.dataset.yteHiddenLibraryArtist;
+        }
+      }
+    }
+  }
+
   function collectAllListenAgainArtists() {
     // Scan homepage carousel
     const carouselShelves = document.querySelectorAll("ytmusic-carousel-shelf-renderer");
@@ -2440,7 +2506,7 @@
         hideBtn.type = "button";
         hideBtn.className = "yt-enhancer-section-hide-btn";
         hideBtn.setAttribute("aria-label", `Ocultar "${originalTitle}"`);
-        hideBtn.textContent = "\u00D7";
+        hideBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.54-13.54L12 10.94 8.46 7.4 7.05 8.81 10.59 12.35 7.05 15.89l1.41 1.41L12 13.76l3.54 3.54 1.41-1.41-3.54-3.54 3.54-3.54z"/></svg>`;
 
         hideBtn.addEventListener("click", (event) => {
           event.preventDefault();
@@ -2611,13 +2677,49 @@
             <p class="yt-enhancer-settings-help"></p>
           </div>
           <div class="yt-enhancer-settings-section">
+            <label class="yt-enhancer-settings-label">Biblioteca</label>
             <label class="yt-enhancer-settings-switch-control">
-              <span>Abrir sempre em playlists</span>
+              <span>Sempre abrir em playlists</span>
               <span class="yt-enhancer-switch">
                 <input id="yt-enhancer-library-redirect" type="checkbox" class="yt-enhancer-switch-input" />
                 <span class="yt-enhancer-switch-track"></span>
               </span>
             </label>
+            <div class="yt-enhancer-settings-hidden-section">
+              <button type="button" class="yt-enhancer-settings-hidden-toggle">
+                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
+                <span class="yt-enhancer-settings-hidden-summary"></span>
+              </button>
+              <div class="yt-enhancer-settings-hidden-collapsible" hidden>
+                <div class="yt-enhancer-settings-hidden-list"></div>
+                <button type="button" class="yt-enhancer-settings-unhide-all">Reexibir todas</button>
+              </div>
+            </div>
+            <label class="yt-enhancer-settings-sub-label">Artistas</label>
+            <label class="yt-enhancer-settings-switch-control">
+              <span>Ocultar artistas na homepage</span>
+              <span class="yt-enhancer-switch">
+                <input id="yt-enhancer-hide-listen-again-artists" type="checkbox" class="yt-enhancer-switch-input" />
+                <span class="yt-enhancer-switch-track"></span>
+              </span>
+            </label>
+            <label class="yt-enhancer-settings-switch-control">
+              <span>Ocultar artistas na biblioteca</span>
+              <span class="yt-enhancer-switch">
+                <input id="yt-enhancer-hide-library-artists" type="checkbox" class="yt-enhancer-switch-input" />
+                <span class="yt-enhancer-switch-track"></span>
+              </span>
+            </label>
+            <div class="yt-enhancer-settings-hidden-artists-section">
+              <button type="button" class="yt-enhancer-settings-hidden-artists-toggle">
+                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
+                <span class="yt-enhancer-settings-hidden-artists-summary"></span>
+              </button>
+              <div class="yt-enhancer-settings-hidden-artists-collapsible" hidden>
+                <div class="yt-enhancer-settings-hidden-artists-list"></div>
+                <button type="button" class="yt-enhancer-settings-unhide-all-artists">Reexibir todos</button>
+              </div>
+            </div>
           </div>
           <div class="yt-enhancer-settings-section">
             <label class="yt-enhancer-settings-label">Aparencia</label>
@@ -2671,35 +2773,14 @@
                 <span class="yt-enhancer-settings-debloat-summary"></span>
               </button>
               <div class="yt-enhancer-settings-debloat-collapsible" hidden>
+                <label class="yt-enhancer-settings-switch-control">
+                  <span>Ocultar todos os itens</span>
+                  <span class="yt-enhancer-switch">
+                    <input id="yt-enhancer-hide-all-context-items" type="checkbox" class="yt-enhancer-switch-input" />
+                    <span class="yt-enhancer-switch-track"></span>
+                  </span>
+                </label>
                 <div class="yt-enhancer-settings-debloat-list"></div>
-              </div>
-            </div>
-            <div class="yt-enhancer-settings-hidden-section">
-              <button type="button" class="yt-enhancer-settings-hidden-toggle">
-                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
-                <span class="yt-enhancer-settings-hidden-summary"></span>
-              </button>
-              <div class="yt-enhancer-settings-hidden-collapsible" hidden>
-                <div class="yt-enhancer-settings-hidden-list"></div>
-                <button type="button" class="yt-enhancer-settings-unhide-all">Reexibir todas</button>
-              </div>
-            </div>
-            <label class="yt-enhancer-settings-sub-label">Homepage</label>
-            <label class="yt-enhancer-settings-switch-control">
-              <span>Ocultar todos os artistas em "Ouvir de novo"</span>
-              <span class="yt-enhancer-switch">
-                <input id="yt-enhancer-hide-listen-again-artists" type="checkbox" class="yt-enhancer-switch-input" />
-                <span class="yt-enhancer-switch-track"></span>
-              </span>
-            </label>
-            <div class="yt-enhancer-settings-hidden-artists-section">
-              <button type="button" class="yt-enhancer-settings-hidden-artists-toggle">
-                <span class="yt-enhancer-settings-hidden-toggle-arrow">&#9654;</span>
-                <span class="yt-enhancer-settings-hidden-artists-summary"></span>
-              </button>
-              <div class="yt-enhancer-settings-hidden-artists-collapsible" hidden>
-                <div class="yt-enhancer-settings-hidden-artists-list"></div>
-                <button type="button" class="yt-enhancer-settings-unhide-all-artists">Reexibir todos</button>
               </div>
             </div>
             <div class="yt-enhancer-settings-sections-debloat-section">
@@ -2759,8 +2840,10 @@
     const debloatCollapsible = root.querySelector(".yt-enhancer-settings-debloat-collapsible");
     const debloatSummary = root.querySelector(".yt-enhancer-settings-debloat-summary");
     const debloatList = root.querySelector(".yt-enhancer-settings-debloat-list");
+    const hideAllContextItemsCheckbox = root.querySelector("#yt-enhancer-hide-all-context-items");
     const hideUpgradeCheckbox = root.querySelector("#yt-enhancer-hide-upgrade");
     const hideListenAgainArtistsCheckbox = root.querySelector("#yt-enhancer-hide-listen-again-artists");
+    const hideLibraryArtistsCheckbox = root.querySelector("#yt-enhancer-hide-library-artists");
     const hiddenArtistsToggleButton = root.querySelector(".yt-enhancer-settings-hidden-artists-toggle");
     const hiddenArtistsToggleArrow = hiddenArtistsToggleButton?.querySelector(".yt-enhancer-settings-hidden-toggle-arrow");
     const hiddenArtistsCollapsible = root.querySelector(".yt-enhancer-settings-hidden-artists-collapsible");
@@ -2800,8 +2883,10 @@
       !debloatCollapsible ||
       !debloatSummary ||
       !debloatList ||
+      !hideAllContextItemsCheckbox ||
       !hideUpgradeCheckbox ||
       !hideListenAgainArtistsCheckbox ||
+      !hideLibraryArtistsCheckbox ||
       !hiddenArtistsToggleButton ||
       !hiddenArtistsToggleArrow ||
       !hiddenArtistsCollapsible ||
@@ -2903,6 +2988,7 @@
 
       if (isOpen) {
         document.body.style.overflow = "hidden";
+        renderDebloatControls();
         renderSectionsDebloatControls();
       } else {
         document.body.style.overflow = "";
@@ -2977,15 +3063,24 @@
       unhideAllButton.disabled = hiddenGroups.length === 0;
     };
 
-    const renderDebloatControls = () => {
-      const hiddenCount = hiddenContextMenuItems.length;
+    const updateDebloatSummary = () => {
+      if (!debloatSummary) return;
+      const validHidden = hiddenContextMenuItems.filter((id) =>
+        CONTEXT_MENU_ITEMS.some((item) => item.id === id),
+      );
+      const hiddenCount = validHidden.length;
       const totalCount = CONTEXT_MENU_ITEMS.length;
+      const allHidden = hiddenCount === totalCount;
+
+      hideAllContextItemsCheckbox.checked = allHidden;
 
       debloatSummary.textContent =
         hiddenCount === 0
           ? `Menu de contexto — todos os ${totalCount} itens visiveis.`
           : `Menu de contexto — ${hiddenCount} de ${totalCount} iten${hiddenCount > 1 ? "s" : ""} oculto${hiddenCount > 1 ? "s" : ""}.`;
+    };
 
+    const renderDebloatControls = () => {
       debloatList.innerHTML = "";
 
       CONTEXT_MENU_ITEMS.forEach((item) => {
@@ -3012,7 +3107,7 @@
         input.addEventListener("change", () => {
           setContextMenuItemHidden(item.id, !input.checked);
           debloatContextMenu();
-          renderDebloatControls();
+          updateDebloatSummary();
         });
 
         switchWrap.appendChild(input);
@@ -3022,6 +3117,8 @@
         row.appendChild(switchWrap);
         debloatList.appendChild(row);
       });
+
+      updateDebloatSummary();
     };
 
     const renderHiddenArtistControls = () => {
@@ -3187,6 +3284,7 @@
     libraryRedirectCheckbox.checked = Boolean(libraryRedirectToPlaylists);
     hideUpgradeCheckbox.checked = Boolean(hideUpgradeButton);
     hideListenAgainArtistsCheckbox.checked = Boolean(hideListenAgainArtists);
+    hideLibraryArtistsCheckbox.checked = Boolean(hideLibraryArtists);
     renderHiddenArtistControls();
     renderSectionsDebloatControls();
 
@@ -3210,6 +3308,17 @@
       debloatListenAgainArtists();
     });
 
+    hideLibraryArtistsCheckbox.addEventListener("change", () => {
+      setHideLibraryArtists(hideLibraryArtistsCheckbox.checked);
+      if (hideLibraryArtistsCheckbox.checked) {
+        collectAllListenAgainArtists();
+      } else {
+        unhideAllArtists();
+        renderHiddenArtistControls();
+      }
+      debloatLibraryArtists();
+    });
+
     hideAllSectionsCheckbox.addEventListener("change", () => {
       const shouldHide = hideAllSectionsCheckbox.checked;
       const inputs = sectionsDebloatList.querySelectorAll(".yt-enhancer-switch-input");
@@ -3218,6 +3327,20 @@
         setTimeout(() => {
           if (input.checked !== shouldHide) {
             input.checked = shouldHide;
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        }, index * 60);
+      });
+    });
+
+    hideAllContextItemsCheckbox.addEventListener("change", () => {
+      const shouldHide = hideAllContextItemsCheckbox.checked;
+      const inputs = debloatList.querySelectorAll(".yt-enhancer-switch-input");
+
+      inputs.forEach((input, index) => {
+        setTimeout(() => {
+          if (input.checked !== !shouldHide) {
+            input.checked = !shouldHide;
             input.dispatchEvent(new Event("change", { bubbles: true }));
           }
         }, index * 60);
@@ -3415,6 +3538,10 @@
 
     document.addEventListener("yt-enhancer:hidden-artists-change", () => {
       renderHiddenArtistControls();
+    });
+
+    document.addEventListener("yt-enhancer:context-menu-debloat-change", () => {
+      updateDebloatSummary();
     });
 
     window.addEventListener("resize", () => {
@@ -4500,23 +4627,27 @@
       /* === Section hide button on carousel headers === */
       .yt-enhancer-section-hide-btn {
         flex-shrink: 0;
-        margin-left: 8px;
-        width: 28px;
-        height: 28px;
-        border: none;
+        margin-left: 10px;
+        width: 36px;
+        height: 36px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 50%;
-        background: rgba(0, 0, 0, 0.7);
-        color: #fff;
-        font-size: 18px;
-        line-height: 1;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.6);
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
         opacity: 0;
-        transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease;
+        transition: opacity 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
         pointer-events: none;
-        transform: scale(0.8);
+        transform: scale(0.9);
+        padding: 0;
+      }
+      .yt-enhancer-section-hide-btn svg {
+        width: 20px;
+        height: 20px;
+        fill: currentColor;
       }
       ytmusic-carousel-shelf-basic-header-renderer:hover .yt-enhancer-section-hide-btn {
         opacity: 1;
@@ -4524,7 +4655,14 @@
         pointer-events: auto;
       }
       .yt-enhancer-section-hide-btn:hover {
-        background: rgba(220, 30, 60, 0.9);
+        background: rgba(255, 63, 102, 0.2);
+        border-color: rgba(255, 63, 102, 0.4);
+        color: #ff3f66;
+        transform: scale(1.05);
+      }
+      .yt-enhancer-section-hide-btn:active {
+        transform: scale(0.95);
+        background: rgba(255, 63, 102, 0.35);
       }
 
       .yt-enhancer-startup-toast {
@@ -4625,32 +4763,53 @@
   );
   console.log(`[YT-Enhancer] 📌 Modo dos alfinetes: ${pinVisibilityMode}`);
 
-  let runtimeInterval = null;
-
-  function startRuntimeChecks() {
-    if (runtimeInterval) return;
-
-    runtimeInterval = setInterval(() => {
-      checkLibraryRedirect();
-      pinPlaylists();
-      processLibraryPlaylists();
-      hidePlaylistsOnHome();
-      checkModal();
-      checkNotifications();
-      debloatContextMenu();
-      debloatUpgradeButton();
-      debloatListenAgainArtists();
-      debloatHomepageSections();
-    }, 500);
+  // === DEBOUNCE HELPER ===
+  function debounce(fn, ms) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), ms);
+    };
   }
 
-  // Verifica periodicamente até encontrar tudo
-  const initInterval = setInterval(() => {
-    const volumeReady = setupVolumeSlider();
-    const playlistsReady = pinPlaylists();
-    processLibraryPlaylists();
+  // === MUTATION OBSERVER (replaces polling intervals) ===
+  const debouncedPinPlaylists = debounce(pinPlaylists, 120);
+  const debouncedProcessLibrary = debounce(processLibraryPlaylists, 120);
+  const debouncedHidePlaylistsHome = debounce(hidePlaylistsOnHome, 150);
+  const debouncedCheckModal = debounce(checkModal, 100);
+  const debouncedCheckNotifications = debounce(checkNotifications, 200);
+  const debouncedDebloatUpgrade = debounce(debloatUpgradeButton, 200);
+  const debouncedDebloatListenAgain = debounce(debloatListenAgainArtists, 150);
+  const debouncedDebloatHomepage = debounce(debloatHomepageSections, 150);
 
-    // Verifica modal de salvar, home e notificações
+  function onDomMutation() {
+    debouncedPinPlaylists();
+    debouncedProcessLibrary();
+    debouncedHidePlaylistsHome();
+    debouncedCheckModal();
+    debouncedCheckNotifications();
+    debouncedDebloatUpgrade();
+    debouncedDebloatListenAgain();
+    debouncedDebloatHomepage();
+  }
+
+  const domObserver = new MutationObserver(onDomMutation);
+  domObserver.observe(document.body, { childList: true, subtree: true });
+
+  // Setup volume slider once available
+  const volumeObserver = new MutationObserver(() => {
+    if (setupVolumeSlider()) {
+      volumeObserver.disconnect();
+    }
+  });
+  volumeObserver.observe(document.body, { childList: true, subtree: true });
+  setupVolumeSlider();
+
+  // Run everything once at startup to catch elements already in DOM
+  function runAllChecks() {
+    checkLibraryRedirect();
+    pinPlaylists();
+    processLibraryPlaylists();
     hidePlaylistsOnHome();
     checkModal();
     checkNotifications();
@@ -4658,20 +4817,25 @@
     debloatUpgradeButton();
     debloatListenAgainArtists();
     debloatHomepageSections();
+    debloatLibraryArtists();
+  }
 
-    // Para o interval de inicialização quando tudo estiver pronto
-    if (volumeReady && playlistsReady) {
-      console.log("[YT-Enhancer] ✅ Tudo pronto!");
-      clearInterval(initInterval);
-      startRuntimeChecks();
+  // Initial run after a short delay for SPA content to render
+  setTimeout(runAllChecks, 500);
+  setTimeout(runAllChecks, 1500);
+  setTimeout(runAllChecks, 3000);
+
+  // Re-run on navigation (YTMusic is a SPA — content changes without page reload)
+  let lastUrl = location.href;
+  const navObserver = new MutationObserver(() => {
+    const currentUrl = location.href;
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
+      checkLibraryRedirect();
+      setTimeout(runAllChecks, 300);
     }
-  }, 1000);
+  });
+  navObserver.observe(document.body, { childList: true, subtree: true });
 
-  // Timeout de segurança - para após 30 segundos
-  setTimeout(() => {
-    clearInterval(initInterval);
-    // Continua verificando mesmo após timeout
-    startRuntimeChecks();
-    console.log("[YT-Enhancer] Timeout - parando inicialização");
-  }, 30000);
+  console.log("[YT-Enhancer] ✅ MutationObserver ativo (sem polling)!");
 })();

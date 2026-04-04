@@ -1,6 +1,6 @@
 # YT-Music Enhancer
 
-![Version](https://img.shields.io/badge/version-1.46-2ea44f)
+![Version](https://img.shields.io/badge/version-1.5.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-YouTube%20Music-ff0000)
 ![Type](https://img.shields.io/badge/type-userscript-1f6feb)
 ![Browsers](https://img.shields.io/badge/browsers-Chromium%20%7C%20Firefox-6f42c1)
@@ -41,7 +41,8 @@ A userscript that upgrades the YouTube Music web app with playlist management, h
 
 ### Context menu debloat
 
-- 19 right-click context menu items can be individually toggled on/off (e.g., "Start radio", "Share", "Stats for nerds", "Download").
+- 21 right-click context menu items can be individually toggled on/off (e.g., "Start radio", "Share", "Stats for nerds", "Download").
+- **"Ocultar todos" master toggle** hides all context menu items at once.
 - Hidden items are removed from the popup and the menu is repositioned automatically.
 
 ### UI and quality of life
@@ -96,14 +97,10 @@ The gear button opens a centered modal with backdrop blur. Sections:
 | Section | Controls |
 |---|---|
 | **Visibilidade do alfinete** | Dropdown: always / dynamic / hover-only |
-| **Abrir sempre em playlists** | Toggle for library redirect |
+| **Biblioteca** | Sempre abrir em playlists, Playlists ocultas (collapsible), **Artistas** — Ocultar na homepage, Ocultar na biblioteca, Artistas ocultos (collapsible) |
 | **Aparencia** | 4 preset buttons, Catppuccin variant selector, 4 color pickers, reset button |
 | **Debloat** | Upgrade button toggle |
-| Menu de contexto | Collapsible — 19 individual item toggles |
-| Playlists ocultas | Collapsible — per-playlist restore + "Reexibir todas" |
-| **Homepage** | Sub-section label |
-| Ocultar artistas em "Ouvir de novo" | Toggle (OFF unhides all) |
-| Artistas ocultos | Collapsible — per-artist restore + "Reexibir todos" |
+| Menu de contexto | Collapsible — "Ocultar todos" master toggle + 21 individual item toggles |
 | Ocultar secoes | Collapsible — master toggle + 22 individual section toggles + dynamic section restore |
 
 ## Console API
@@ -141,7 +138,8 @@ Uses `GM_getValue`/`GM_setValue` with automatic one-time migration from `localSt
 | `yt-enhancer:library-redirect-playlists` | `boolean` | Library redirect toggle |
 | `yt-enhancer:hidden-context-menu-items` | `string[]` | Hidden context menu item IDs |
 | `yt-enhancer:hide-upgrade-button` | `boolean` | Upgrade button toggle |
-| `yt-enhancer:hide-listen-again-artists` | `boolean` | Hide all artists toggle |
+| `yt-enhancer:hide-listen-again-artists` | `boolean` | Hide all artists on homepage |
+| `yt-enhancer:hide-library-artists` | `boolean` | Hide all artists in library |
 | `yt-enhancer:hidden-artists` | `string[]` | Hidden artist channel IDs |
 | `yt-enhancer:hidden-artist-labels` | `object` | Display names for hidden artists |
 | `yt-enhancer:hidden-homepage-sections` | `string[]` | Hidden predefined section IDs |
@@ -166,4 +164,4 @@ YTM-Enhanced/
 
 - YouTube Music frequently changes its DOM structure; selectors may need updates after major YTM releases.
 - Labels and text matching are optimized for pt-BR. Other locales may not match correctly for section hiding and context menu debloat.
-- The script polls the DOM every 500ms rather than using framework-level hooks, since YTM's internal API is not publicly documented.
+- The script uses MutationObserver with debounce instead of polling for better performance.

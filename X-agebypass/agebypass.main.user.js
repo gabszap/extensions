@@ -597,9 +597,9 @@
 
   // ==================== TRIGGER REVEAL ====================
 
-  function triggerReveal(mediaContainer, tweetData, btn, source) {
+  function triggerReveal(mediaContainer, tweetData, btn, source, onSuccess) {
     logVerbose("Reveal source:", source, "tweet:", tweetData && tweetData.id);
-    fetchAndReplace(mediaContainer, tweetData, btn);
+    fetchAndReplace(mediaContainer, tweetData, btn, onSuccess);
   }
 
   // ==================== EYE BUTTON ====================
@@ -649,7 +649,7 @@
     btn.addEventListener("click", function (e) {
       e.stopPropagation();
       e.preventDefault();
-      triggerReveal(mediaContainer, tweetData, btn, "manual");
+      triggerReveal(mediaContainer, tweetData, btn, "manual", null);
     });
 
     actionBar.insertBefore(btn, actionBar.firstChild);
@@ -659,7 +659,7 @@
 
   // ==================== API FETCH & REPLACE ====================
 
-  function fetchAndReplace(container, tweetData, btn) {
+  function fetchAndReplace(container, tweetData, btn, onSuccess) {
     var url = FX_API + tweetData.user + "/status/" + tweetData.id;
     logVerbose("Fetching:", url);
 
@@ -686,20 +686,24 @@
             );
           }
           replaceWithGrid(container, mediaAll);
+
+          // Remove button ONLY on success
+          if (btn && btn.parentElement) {
+            btn.remove();
+          }
+          if (onSuccess) onSuccess();
         } catch (err) {
           console.error("[fx-reveal] API parse error:", err);
           showError(container, "API parse error");
+          // Button stays for manual retry
         }
       },
       onerror: function () {
         console.error("[fx-reveal] Network error");
         showError(container, "Network error");
+        // Button stays for manual retry
       },
     });
-
-    if (btn && btn.parentElement) {
-      btn.remove();
-    }
   }
 
   function replaceWithGrid(container, mediaAll) {
@@ -1323,6 +1327,14 @@
       }
     });
 
+    // Close button (X) closes modal
+    var closeBtn = overlay.querySelector(".fx-settings-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        closeSettingsModal();
+      });
+    }
+
     // Save button
     var saveBtn = overlay.querySelector('[data-action="save"]');
     saveBtn.addEventListener("click", function () {
@@ -1412,8 +1424,9 @@
       var delay = isPostPage() ? 0 : 50;
       setTimeout(function () {
         try {
-          triggerReveal(mediaContainer, tweetData, btn, "auto");
-          markAutoRevealed(tweetNode);
+          triggerReveal(mediaContainer, tweetData, btn, "auto", function () {
+            markAutoRevealed(tweetNode);
+          });
         } catch (err) {
           clearAutoRevealPending(tweetNode);
           logVerbose("Auto-reveal failed", err);

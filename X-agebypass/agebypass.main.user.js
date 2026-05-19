@@ -1,737 +1,1448 @@
 // ==UserScript==
 // @name         Age Bypass for Twitter
 // @namespace    Age Bypass for Twitter
-// @version      1.0.0
+// @version      1.1.0
 // @description  Adds a reveal button (eye icon) to bypass X/Twitter age-restricted media via the fxTwitter API. Features grid layout and lightbox viewer.
 // @author       gabszap
 // @match        https://twitter.com/*
 // @match        https://x.com/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @updateURL    https://github.com/gabszap/extensions/raw/refs/heads/main/X-agebypass/agebypass.main.user.js
 // @downloadURL  https://github.com/gabszap/extensions/raw/refs/heads/main/X-agebypass/agebypass.main.user.js
 // ==/UserScript==
 
 (function () {
-    "use strict";
+  "use strict";
 
-    var FX_API = "https://api.fxtwitter.com/";
+  var FX_API = "https://api.fxtwitter.com/";
 
-    var VERSION = (typeof GM_info !== "undefined" && GM_info && GM_info.script && GM_info.script.version) || "unknown";
-    console.log("[fx-reveal] Script loaded v" + VERSION);
+  var VERSION = (typeof GM_info !== "undefined" && GM_info && GM_info.script && GM_info.script.version) || "unknown";
 
-    // ==================== OVERLAY ====================
+  // ==================== SETTINGS ====================
 
-    var overlayEl = null;
-    var overlayImg = null;
-    var overlayVideo = null;
-    var overlayClose = null;
-    var overlayPrev = null;
-    var overlayNext = null;
-    var overlayMedia = null; // full mediaAll array
-    var overlayIndex = 0;
+  var DEFAULT_SETTINGS = {
+    debugVerbose: false,
+    experimental: {
+      autoReveal: false,
+      revealOnPost: false,
+    },
+  };
 
-    function createOverlay() {
-        if (overlayEl) return;
+  function mergeSettings(_base, incoming) {
+    return {
+      debugVerbose: !!(incoming && incoming.debugVerbose),
+      experimental: {
+        autoReveal: !!(incoming && incoming.experimental && incoming.experimental.autoReveal),
+        revealOnPost: !!(incoming && incoming.experimental && incoming.experimental.revealOnPost),
+      },
+    };
+  }
 
-        overlayEl = document.createElement("div");
-        overlayEl.id = "fx-reveal-overlay";
-        overlayEl.style.cssText = [
-            "position:fixed",
-            "top:0",
-            "left:0",
-            "width:100vw",
-            "height:100vh",
-            "background:rgba(0,0,0,0.92)",
-            "z-index:999999",
-            "display:none",
-            "justify-content:center",
-            "align-items:center",
-            "cursor:pointer",
-            "user-select:none",
-            "opacity:0",
-            "transition:opacity 0.2s ease"
-        ].join(";");
+  function loadSettings() {
+    try {
+      var raw =
+        typeof GM_getValue !== "undefined"
+          ? GM_getValue("fx_reveal_settings", null)
+          : localStorage.getItem("fx_reveal_settings");
 
-        overlayImg = document.createElement("img");
-        overlayImg.style.cssText = [
-            "max-width:92vw",
-            "max-height:92vh",
-            "object-fit:contain",
-            "border-radius:12px",
-            "cursor:zoom-in",
-            "position:relative",
-            "z-index:2",
-            "box-shadow:0 4px 40px rgba(0,0,0,0.5)"
-        ].join(";");
+      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 
-        overlayVideo = document.createElement("video");
-        overlayVideo.style.cssText = [
-            "max-width:92vw",
-            "max-height:92vh",
-            "object-fit:contain",
-            "border-radius:12px",
-            "position:relative",
-            "z-index:2",
-            "display:none",
-            "box-shadow:0 4px 40px rgba(0,0,0,0.5)"
-        ].join(";");
-        overlayVideo.controls = true;
-        overlayVideo.preload = "metadata";
-
-        overlayPrev = document.createElement("button");
-        overlayPrev.innerHTML = "&#10094;";
-        overlayPrev.style.cssText = [
-            "position:fixed",
-            "left:16px",
-            "top:50%",
-            "transform:translateY(-50%)",
-            "background:rgba(255,255,255,0.1)",
-            "color:#fff",
-            "border:none",
-            "border-radius:999px",
-            "width:44px",
-            "height:44px",
-            "font-size:20px",
-            "cursor:pointer",
-            "z-index:3",
-            "display:none",
-            "align-items:center",
-            "justify-content:center",
-            "transition:background 0.15s"
-        ].join(";");
-        overlayPrev.addEventListener("mouseenter", function () { overlayPrev.style.background = "rgba(255,255,255,0.25)"; });
-        overlayPrev.addEventListener("mouseleave", function () { overlayPrev.style.background = "rgba(255,255,255,0.1)"; });
-
-        overlayNext = document.createElement("button");
-        overlayNext.innerHTML = "&#10095;";
-        overlayNext.style.cssText = [
-            "position:fixed",
-            "right:16px",
-            "top:50%",
-            "transform:translateY(-50%)",
-            "background:rgba(255,255,255,0.1)",
-            "color:#fff",
-            "border:none",
-            "border-radius:999px",
-            "width:44px",
-            "height:44px",
-            "font-size:20px",
-            "cursor:pointer",
-            "z-index:3",
-            "display:none",
-            "align-items:center",
-            "justify-content:center",
-            "transition:background 0.15s"
-        ].join(";");
-        overlayNext.addEventListener("mouseenter", function () { overlayNext.style.background = "rgba(255,255,255,0.25)"; });
-        overlayNext.addEventListener("mouseleave", function () { overlayNext.style.background = "rgba(255,255,255,0.1)"; });
-
-        var closeBtn = document.createElement("button");
-        closeBtn.innerHTML = "&#10005;";
-        closeBtn.style.cssText = [
-            "position:fixed",
-            "top:12px",
-            "right:16px",
-            "background:rgba(255,255,255,0.1)",
-            "color:#fff",
-            "border:none",
-            "border-radius:999px",
-            "width:40px",
-            "height:40px",
-            "font-size:18px",
-            "cursor:pointer",
-            "z-index:3",
-            "display:flex",
-            "align-items:center",
-            "justify-content:center",
-            "transition:background 0.15s"
-        ].join(";");
-        closeBtn.addEventListener("mouseenter", function () { closeBtn.style.background = "rgba(255,255,255,0.25)"; });
-        closeBtn.addEventListener("mouseleave", function () { closeBtn.style.background = "rgba(255,255,255,0.1)"; });
-
-        overlayEl.appendChild(overlayPrev);
-        overlayEl.appendChild(overlayNext);
-        overlayEl.appendChild(overlayImg);
-        overlayEl.appendChild(overlayVideo);
-        overlayEl.appendChild(closeBtn);
-        document.body.appendChild(overlayEl);
-
-        // Events
-        overlayEl.addEventListener("click", function (e) {
-            if (e.target === overlayEl) {
-                hideOverlay();
-            }
-        });
-        overlayImg.addEventListener("click", function () {
-            // Open current image in new tab
-            if (overlayImg.src && overlayImg.src.indexOf("data:") !== 0) {
-                window.open(overlayImg.src, "_blank");
-            } else if (overlayMedia && overlayMedia[overlayIndex]) {
-                window.open(overlayMedia[overlayIndex].url, "_blank");
-            }
-        });
-        overlayPrev.addEventListener("click", function (e) {
-            e.stopPropagation();
-            navigateOverlay(-1);
-        });
-        overlayNext.addEventListener("click", function (e) {
-            e.stopPropagation();
-            navigateOverlay(1);
-        });
-        closeBtn.addEventListener("click", function (e) {
-            e.stopPropagation();
-            hideOverlay();
-        });
-
-        // Keyboard
-        document.addEventListener("keydown", function (e) {
-            if (overlayEl && overlayEl.style.display !== "none") {
-                if (e.key === "Escape") {
-                    hideOverlay();
-                } else if (e.key === "ArrowLeft") {
-                    navigateOverlay(-1);
-                } else if (e.key === "ArrowRight") {
-                    navigateOverlay(1);
-                }
-            }
-        });
+      var parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return mergeSettings(DEFAULT_SETTINGS, parsed || {});
+    } catch (err) {
+      return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     }
+  }
 
-    function showOverlay(mediaAll, index) {
-        createOverlay();
-        overlayMedia = mediaAll;
-        overlayIndex = index;
-
-        var item = mediaAll[index];
-        var isVideo = (item.type === "video" || item.type === "animated_gif");
-
-        if (isVideo) {
-            overlayImg.style.display = "none";
-            overlayVideo.style.display = "block";
-
-            // Determine video source: prefer item.video.urls[0], fallback to item.url (direct MP4)
-            var videoSrc = (item.video && item.video.urls && item.video.urls[0]) || item.url || "";
-            console.log("[fx-reveal] Video source:", videoSrc);
-
-            overlayVideo.poster = "";
-            overlayVideo.src = videoSrc;
-            overlayVideo.currentTime = 0;
-            overlayVideo.play().catch(function (err) {
-                console.log("[fx-reveal] Video autoplay prevented:", err);
-            });
-        } else {
-            overlayVideo.style.display = "none";
-            overlayVideo.pause();
-            overlayVideo.src = "";
-            overlayVideo.poster = "";
-            overlayImg.style.display = "block";
-            overlayImg.src = item.url;
-        }
-
-        overlayEl.style.display = "flex";
-        setTimeout(function () { overlayEl.style.opacity = "1"; }, 10);
-
-        var showPrev = mediaAll.length > 1;
-        overlayPrev.style.display = showPrev ? "flex" : "none";
-        overlayNext.style.display = showPrev ? "flex" : "none";
+  function saveSettings(settings) {
+    var json = JSON.stringify(settings);
+    if (typeof GM_setValue !== "undefined") {
+      GM_setValue("fx_reveal_settings", json);
+    } else {
+      localStorage.setItem("fx_reveal_settings", json);
     }
+  }
 
-    function hideOverlay() {
-        overlayImg.src = "";
-        overlayVideo.pause();
-        overlayVideo.src = "";
-        overlayVideo.poster = "";
-        overlayEl.style.opacity = "0";
-        setTimeout(function () { overlayEl.style.display = "none"; }, 200);
-        overlayMedia = null;
-        overlayIndex = 0;
-    }
+  var SETTINGS = loadSettings();
 
-    function navigateOverlay(direction) {
-        if (!overlayMedia || overlayMedia.length < 2) return;
-        overlayIndex = (overlayIndex + direction + overlayMedia.length) % overlayMedia.length;
-        showOverlay(overlayMedia, overlayIndex);
-    }
+  // ==================== LOGGER ====================
 
-    // ==================== HELPERS ====================
+  function logVerbose() {
+    if (!SETTINGS.debugVerbose) return;
+    // eslint-disable-next-line prefer-rest-params
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift("[fx-reveal]");
+    console.log.apply(console, args);
+  }
 
-    function extractTweetData(tweetNode) {
-        var link = tweetNode.querySelector('a[href*="/status/"]');
-        if (!link) return null;
-        var m = link.href.match(/(?:twitter|x)\.com\/([^/]+)\/status\/(\d+)/);
-        return m ? { user: m[1], id: m[2] } : null;
-    }
+  function logAlways() {
+    // eslint-disable-next-line prefer-rest-params
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift("[fx-reveal]");
+    console.log.apply(console, args);
+  }
 
-    function findShowButton(tweetNode) {
-        var buttons = tweetNode.querySelectorAll('button[role="button"]');
-        for (var i = 0; i < buttons.length; i++) {
-            var txt = buttons[i].textContent || "";
-            if (txt.indexOf("Mostrar") !== -1 || txt.indexOf("Show") !== -1) {
-                return buttons[i];
-            }
-        }
-        return null;
-    }
+  logAlways("Script loaded v" + VERSION);
 
-    function findRestrictionText(tweetNode) {
-        var divs = tweetNode.querySelectorAll("div");
-        for (var i = 0; i < divs.length; i++) {
-            var txt = divs[i].innerText || divs[i].textContent || "";
-            if (
-                txt.indexOf("Conte\u00fado adulto com restri\u00e7\u00e3o de idade") !== -1 ||
-                txt.indexOf("Adult content with age restriction") !== -1
-            ) {
-                return divs[i];
-            }
-        }
-        return null;
-    }
+  // ==================== PAGE CONTEXT ====================
 
-    function hasAgeRestriction(tweetNode) {
-        if (findShowButton(tweetNode)) return true;
-        if (findRestrictionText(tweetNode)) return true;
-        return false;
-    }
+  function isPostPage() {
+    return /\/status\/\d+/.test(location.pathname);
+  }
 
-    function findMediaContainer(tweetNode) {
-        var btn = findShowButton(tweetNode);
-        if (btn) {
-            var el = btn.parentElement;
-            if (el) el = el.parentElement;
-            if (el) el = el.parentElement;
-            if (el) {
-                console.log("[fx-reveal] Media container found via button:", el.className.slice(0, 80));
-                return el;
-            }
-        }
+  function shouldAutoRevealHere() {
+    var exp = SETTINGS.experimental || {};
+    if (!exp.autoReveal) return false;
+    if (!exp.revealOnPost) return true;
+    return isPostPage();
+  }
 
-        var textDiv = findRestrictionText(tweetNode);
-        if (textDiv) {
-            var el2 = textDiv.parentElement;
-            if (el2) el2 = el2.parentElement;
-            if (el2) el2 = el2.parentElement;
-            if (el2) el2 = el2.parentElement;
-            if (el2) {
-                console.log("[fx-reveal] Media container found via text:", el2.className.slice(0, 80));
-                return el2;
-            }
-        }
+  // ==================== AUTO-REVEAL GUARDS ====================
 
-        return null;
-    }
+  function canAutoReveal(tweetNode) {
+    if (!tweetNode) return false;
+    if (tweetNode.getAttribute("data-fx-auto-revealed") === "1") return false;
+    if (tweetNode.getAttribute("data-fx-auto-reveal-pending") === "1") return false;
+    return true;
+  }
 
-    function findActionBar(tweetNode) {
-        var moreBtn = tweetNode.querySelector('[data-testid="caret"]');
-        if (moreBtn) {
-            var el = moreBtn;
-            for (var s = 0; s < 5; s++) {
-                if (!el.parentElement) break;
-                el = el.parentElement;
-                var cls = el.className || "";
-                if (cls.indexOf("r-1cmwbt1") !== -1) {
-                    console.log("[fx-reveal] Action bar found via caret/r-1cmwbt1");
-                    return el;
-                }
-            }
-            if (moreBtn.parentElement) {
-                console.log("[fx-reveal] Action bar found via caret/parent");
-                return moreBtn.parentElement;
-            }
-        }
+  function markAutoRevealPending(tweetNode) {
+    tweetNode.setAttribute("data-fx-auto-reveal-pending", "1");
+  }
 
-        var grokBtn = tweetNode.querySelector('button[aria-label*="Grok" i]');
-        if (grokBtn) {
-            var el2 = grokBtn;
-            for (var s2 = 0; s2 < 5; s2++) {
-                if (!el2.parentElement) break;
-                el2 = el2.parentElement;
-                var cls2 = el2.className || "";
-                if (cls2.indexOf("r-1cmwbt1") !== -1) {
-                    console.log("[fx-reveal] Action bar found via Grok/r-1cmwbt1");
-                    return el2;
-                }
-            }
-            if (grokBtn.parentElement) {
-                console.log("[fx-reveal] Action bar found via Grok/parent");
-                return grokBtn.parentElement;
-            }
-        }
+  function markAutoRevealed(tweetNode) {
+    tweetNode.removeAttribute("data-fx-auto-reveal-pending");
+    tweetNode.setAttribute("data-fx-auto-revealed", "1");
+  }
 
-        var allDivs = tweetNode.querySelectorAll("div");
-        for (var i = 0; i < allDivs.length; i++) {
-            var cn = allDivs[i].className || "";
-            if (cn.indexOf("r-1kkk96v") !== -1) {
-                var flexRow = allDivs[i].querySelector('[class*="r-1cmwbt1"]');
-                if (flexRow) {
-                    console.log("[fx-reveal] Action bar found via r-1kkk96v/r-1cmwbt1");
-                    return flexRow;
-                }
-                var firstChild = allDivs[i].firstElementChild;
-                if (firstChild) {
-                    console.log("[fx-reveal] Action bar found via r-1kkk96v/first-child");
-                    return firstChild;
-                }
-                console.log("[fx-reveal] Action bar found via r-1kkk96v/self");
-                return allDivs[i];
-            }
-        }
+  function clearAutoRevealPending(tweetNode) {
+    tweetNode.removeAttribute("data-fx-auto-reveal-pending");
+  }
 
-        return null;
-    }
+  // ==================== OVERLAY ====================
 
-    // ==================== EYE BUTTON ====================
+  var overlayEl = null;
+  var overlayImg = null;
+  var overlayVideo = null;
+  var overlayClose = null;
+  var overlayPrev = null;
+  var overlayNext = null;
+  var overlayMedia = null;
+  var overlayIndex = 0;
 
-    function createEyeButton(actionBar, mediaContainer, tweetData) {
-        if (actionBar.querySelector(".fx-reveal-btn")) return;
+  function createOverlay() {
+    if (overlayEl) return;
 
-        var btn = document.createElement("button");
-        btn.className = "fx-reveal-btn";
-        btn.title = "Reveal image";
+    overlayEl = document.createElement("div");
+    overlayEl.id = "fx-reveal-overlay";
+    overlayEl.style.cssText = [
+      "position:fixed",
+      "top:0",
+      "left:0",
+      "width:100vw",
+      "height:100vh",
+      "background:rgba(0,0,0,0.92)",
+      "z-index:999999",
+      "display:none",
+      "justify-content:center",
+      "align-items:center",
+      "cursor:pointer",
+      "user-select:none",
+      "opacity:0",
+      "transition:opacity 0.2s ease",
+    ].join(";");
 
-        btn.innerHTML = [
-            '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block">',
-            '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>',
-            '<circle cx="12" cy="12" r="3"/>',
-            '</svg>'
-        ].join("");
+    overlayImg = document.createElement("img");
+    overlayImg.style.cssText = [
+      "max-width:92vw",
+      "max-height:92vh",
+      "object-fit:contain",
+      "border-radius:12px",
+      "cursor:zoom-in",
+      "position:relative",
+      "z-index:2",
+      "box-shadow:0 4px 40px rgba(0,0,0,0.5)",
+    ].join(";");
 
-        btn.style.cssText = [
-            "display:inline-flex",
-            "align-items:center",
-            "justify-content:center",
-            "background:transparent",
-            "color:rgb(113,118,123)",
-            "border:none",
-            "border-radius:9999px",
-            "width:34px",
-            "height:34px",
-            "padding:0",
-            "margin:0",
-            "cursor:pointer",
-            "line-height:1",
-            "transition:color 0.15s, background 0.15s",
-            "pointer-events:auto"
-        ].join(";");
+    overlayVideo = document.createElement("video");
+    overlayVideo.style.cssText = [
+      "max-width:92vw",
+      "max-height:92vh",
+      "object-fit:contain",
+      "border-radius:12px",
+      "position:relative",
+      "z-index:2",
+      "display:none",
+      "box-shadow:0 4px 40px rgba(0,0,0,0.5)",
+    ].join(";");
+    overlayVideo.controls = true;
+    overlayVideo.preload = "metadata";
 
-        btn.addEventListener("mouseenter", function () {
-            btn.style.background = "rgba(239,243,244,0.1)";
-            btn.style.color = "rgb(29,155,240)";
-        });
-        btn.addEventListener("mouseleave", function () {
-            btn.style.background = "transparent";
-            btn.style.color = "rgb(113,118,123)";
-        });
-
-        btn.addEventListener("click", function (e) {
-            e.stopPropagation();
-            e.preventDefault();
-            console.log("[fx-reveal] Eye button clicked for tweet:", tweetData.user, tweetData.id);
-            fetchAndReplace(mediaContainer, tweetData, btn);
-        });
-
-        actionBar.insertBefore(btn, actionBar.firstChild);
-        console.log("[fx-reveal] Eye button added to action bar");
-    }
-
-    // ==================== API FETCH & REPLACE ====================
-
-    function fetchAndReplace(container, tweetData, btn) {
-        var url = FX_API + tweetData.user + "/status/" + tweetData.id;
-        console.log("[fx-reveal] Fetching:", url);
-
-        GM_xmlhttpRequest({
-            method: "GET",
-            url: url,
-            onload: function (res) {
-                try {
-                    var data = JSON.parse(res.responseText);
-                    var mediaAll = data.tweet && data.tweet.media && data.tweet.media.all;
-                    if (!mediaAll || mediaAll.length === 0) {
-                        console.log("[fx-reveal] No media found in API response");
-                        showError(container, "No media found");
-                        return;
-                    }
-
-                    console.log("[fx-reveal] Media found:", mediaAll.length, "item(s)");
-                    if (mediaAll.length > 0 && (mediaAll[0].type === "video" || mediaAll[0].type === "animated_gif")) {
-                        console.log("[fx-reveal] Video item details:", mediaAll[0].url, "video.urls:", mediaAll[0].video && mediaAll[0].video.urls);
-                    }
-                    replaceWithGrid(container, mediaAll);
-                } catch (err) {
-                    console.error("[fx-reveal] API parse error:", err);
-                    showError(container, "API parse error");
-                }
-            },
-            onerror: function () {
-                console.error("[fx-reveal] Network error");
-                showError(container, "Network error");
-            }
-        });
-
-        if (btn && btn.parentElement) {
-            btn.remove();
-        }
-    }
-
-    function replaceWithGrid(container, mediaAll) {
-        var count = mediaAll.length;
-        console.log("[fx-reveal] Replacing with grid layout, count:", count);
-
-        container.innerHTML = "";
-
-        var containerRules = [
-            "background:none",
-            "filter:none",
-            "position:relative",
-            "border-radius:16px",
-            "overflow:hidden"
-        ];
-
-        if (count === 1) {
-            containerRules.push("display:block");
-            container.style.cssText = containerRules.join(";");
-
-            var singleItem = mediaAll[0];
-            var isSingleVideo = (singleItem.type === "video" || singleItem.type === "animated_gif");
-            var singleImg = makeGridImage(mediaAll, 0, isSingleVideo ? true : false);
-            if (isSingleVideo) {
-                singleImg.style.minHeight = "200px";
-                singleImg.style.width = "100%";
-            } else {
-                singleImg.style.width = "100%";
-                singleImg.style.height = "auto";
-            }
-            container.appendChild(singleImg);
-        } else if (count === 2) {
-            containerRules.push("display:grid");
-            containerRules.push("grid-template-columns:1fr 1fr");
-            containerRules.push("gap:2px");
-            container.style.cssText = containerRules.join(";");
-
-            for (var i = 0; i < count; i++) {
-                var item = makeGridImage(mediaAll, i, true);
-                container.appendChild(item);
-            }
-        } else if (count === 3) {
-            // 1 large left (spans full height, cropped via cover), 2 stacked right (square)
-            containerRules.push("display:grid");
-            containerRules.push("grid-template-columns:1fr 1fr");
-            containerRules.push("grid-template-rows:1fr 1fr");
-            containerRules.push("gap:2px");
-            container.style.cssText = containerRules.join(";");
-            container.style.maxHeight = "320px";
-
-            // LEFT: spans both rows, fills cell with object-fit:cover (may crop)
-            var leftUrl = mediaAll[0].url;
-            var leftCell = document.createElement("div");
-            leftCell.style.cssText = "display:flex;width:100%;height:100%;overflow:hidden;cursor:pointer;position:relative";
-            leftCell.style.gridRow = "1 / -1";
-            leftCell.style.gridColumn = "1 / 2";
-
-            var leftImg = document.createElement("img");
-            leftImg.src = leftUrl;
-            leftImg.alt = "";
-            leftImg.draggable = false;
-            leftImg.style.cssText = "display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;min-width:0;min-height:0";
-
-            leftCell.appendChild(leftImg);
-            leftCell.addEventListener("click", function (e) {
-                e.stopPropagation();
-                e.preventDefault();
-                showOverlay(mediaAll, 0);
-            });
-            container.appendChild(leftCell);
-
-            // RIGHT TOP: square cell
-            var img1 = makeGridImage(mediaAll, 1, true);
-            img1.style.gridRow = "1 / 2";
-            img1.style.gridColumn = "2 / 3";
-            container.appendChild(img1);
-
-            // RIGHT BOTTOM: square cell
-            var img2 = makeGridImage(mediaAll, 2, true);
-            img2.style.gridRow = "2 / 3";
-            img2.style.gridColumn = "2 / 3";
-            container.appendChild(img2);
-        } else if (count >= 4) {
-            // 2x2 grid for 4+ images
-            containerRules.push("display:grid");
-            containerRules.push("grid-template-columns:1fr 1fr");
-            containerRules.push("gap:2px");
-            container.style.cssText = containerRules.join(";");
-            container.style.maxHeight = "320px";
-
-            for (var j = 0; j < Math.min(count, 4); j++) {
-                var item2 = makeGridImage(mediaAll, j, true);
-                container.appendChild(item2);
-            }
-        }
-
-        console.log("[fx-reveal] Grid layout applied, images:", count);
-    }
-
-    function makeGridImage(mediaAll, index, square) {
-        var mediaUrl = mediaAll[index].url;
-        var isVideo = (mediaAll[index].type === "video" || mediaAll[index].type === "animated_gif");
-        var urlIsVideo = mediaUrl.match(/\.(mp4|webm|mov)(\?|$)/i) || mediaUrl.indexOf("/amplify_video/") !== -1 || mediaUrl.indexOf("/video_tweet/") !== -1;
-
-        var containerDiv = document.createElement("div");
-        containerDiv.style.cssText = [
-            "display:flex",
-            "width:100%",
-            "height:100%",
-            "overflow:hidden",
-            "cursor:pointer",
-            "position:relative"
-        ].join(";");
-
-        // For videos whose URL is a direct MP4 (not a thumbnail image), skip the img
-        if (isVideo && urlIsVideo) {
-            // Dark background with play button
-            containerDiv.style.background = "#1a1a2e";
-            containerDiv.style.justifyContent = "center";
-            containerDiv.style.alignItems = "center";
-        } else {
-            // Normal thumbnail image (photo or video with thumbnail URL)
-            var img = document.createElement("img");
-            img.src = mediaUrl;
-            img.alt = "";
-            img.draggable = false;
-
-            var imgRules = [
-                "display:block",
-                "width:100%",
-                "height:100%",
-                "object-fit:cover",
-                "pointer-events:none",
-                "min-width:0",
-                "min-height:0"
-            ];
-
-            if (!square) {
-                imgRules.push("object-fit:contain");
-                imgRules.push("height:auto");
-            } else {
-                imgRules.push("aspect-ratio:1 / 1");
-            }
-
-            img.style.cssText = imgRules.join(";");
-
-            // Log thumbnail load failures
-            img.onerror = function () {
-                console.log("[fx-reveal] Thumbnail failed to load:", mediaUrl);
-                img.style.display = "none";
-                containerDiv.style.background = "#1a1a2e";
-                containerDiv.style.justifyContent = "center";
-                containerDiv.style.alignItems = "center";
-            };
-
-            containerDiv.appendChild(img);
-        }
-
-        // Play button overlay for videos (always)
-        if (isVideo) {
-            var playBtn = document.createElement("div");
-            playBtn.innerHTML = "&#9654;";
-            playBtn.style.cssText = [
-                "position:absolute",
-                "top:50%",
-                "left:50%",
-                "transform:translate(-50%,-50%)",
-                "background:rgba(0,0,0,0.65)",
-                "color:#fff",
-                "border-radius:50%",
-                "width:44px",
-                "height:44px",
-                "display:flex",
-                "align-items:center",
-                "justify-content:center",
-                "font-size:20px",
-                "pointer-events:none",
-                "z-index:2",
-                "box-shadow:0 2px 8px rgba(0,0,0,0.3)"
-            ].join(";");
-            containerDiv.appendChild(playBtn);
-        }
-
-        // Click to open overlay
-        containerDiv.addEventListener("click", function (e) {
-            e.stopPropagation();
-            e.preventDefault();
-            console.log("[fx-reveal] " + (isVideo ? "Video" : "Image") + " clicked, opening overlay index:", index);
-            showOverlay(mediaAll, index);
-        });
-
-        return containerDiv;
-    }
-
-    function showError(container, msg) {
-        var el = document.createElement("div");
-        el.textContent = "\u26A0 fxTwitter: " + msg;
-        el.style.cssText = [
-            "padding:8px 12px",
-            "margin:4px",
-            "color:#fff",
-            "background:rgba(200,0,0,0.8)",
-            "font-size:13px",
-            "border-radius:6px",
-            "text-align:center"
-        ].join(";");
-        container.appendChild(el);
-    }
-
-    // ==================== MAIN ====================
-
-    var PROCESSED_CLASS = "fx-rvl-processed";
-
-    function processTweet(tweetNode) {
-        if (!tweetNode || tweetNode.classList.contains(PROCESSED_CLASS)) return;
-        if (!hasAgeRestriction(tweetNode)) return;
-
-        var tweetData = extractTweetData(tweetNode);
-        if (!tweetData) {
-            console.log("[fx-reveal] Could not extract tweet data");
-            return;
-        }
-
-        var actionBar = findActionBar(tweetNode);
-        if (!actionBar) {
-            console.log("[fx-reveal] Could not find action bar for:", tweetData.user, tweetData.id);
-            return;
-        }
-
-        var mediaContainer = findMediaContainer(tweetNode);
-        if (!mediaContainer) {
-            console.log("[fx-reveal] Could not find media container for:", tweetData.user, tweetData.id);
-            return;
-        }
-
-        tweetNode.classList.add(PROCESSED_CLASS);
-        console.log("[fx-reveal] Processing tweet:", tweetData.user, tweetData.id);
-        createEyeButton(actionBar, mediaContainer, tweetData);
-    }
-
-    var observer = new MutationObserver(function (mutations) {
-        for (var m = 0; m < mutations.length; m++) {
-            var nodes = mutations[m].addedNodes;
-            for (var n = 0; n < nodes.length; n++) {
-                var node = nodes[n];
-                if (node.nodeType !== 1) continue;
-                if (node.matches && node.matches("article")) {
-                    processTweet(node);
-                } else if (node.querySelector) {
-                    var article = node.querySelector("article");
-                    if (article) processTweet(article);
-                }
-            }
-        }
+    overlayPrev = document.createElement("button");
+    overlayPrev.innerHTML = "&#10094;";
+    overlayPrev.style.cssText = [
+      "position:fixed",
+      "left:16px",
+      "top:50%",
+      "transform:translateY(-50%)",
+      "background:rgba(255,255,255,0.1)",
+      "color:#fff",
+      "border:none",
+      "border-radius:999px",
+      "width:44px",
+      "height:44px",
+      "font-size:20px",
+      "cursor:pointer",
+      "z-index:3",
+      "display:none",
+      "align-items:center",
+      "justify-content:center",
+      "transition:background 0.15s",
+    ].join(";");
+    overlayPrev.addEventListener("mouseenter", function () {
+      overlayPrev.style.background = "rgba(255,255,255,0.25)";
+    });
+    overlayPrev.addEventListener("mouseleave", function () {
+      overlayPrev.style.background = "rgba(255,255,255,0.1)";
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    overlayNext = document.createElement("button");
+    overlayNext.innerHTML = "&#10095;";
+    overlayNext.style.cssText = [
+      "position:fixed",
+      "right:16px",
+      "top:50%",
+      "transform:translateY(-50%)",
+      "background:rgba(255,255,255,0.1)",
+      "color:#fff",
+      "border:none",
+      "border-radius:999px",
+      "width:44px",
+      "height:44px",
+      "font-size:20px",
+      "cursor:pointer",
+      "z-index:3",
+      "display:none",
+      "align-items:center",
+      "justify-content:center",
+      "transition:background 0.15s",
+    ].join(";");
+    overlayNext.addEventListener("mouseenter", function () {
+      overlayNext.style.background = "rgba(255,255,255,0.25)";
+    });
+    overlayNext.addEventListener("mouseleave", function () {
+      overlayNext.style.background = "rgba(255,255,255,0.1)";
+    });
 
-    var allArticles = document.querySelectorAll("article");
-    for (var k = 0; k < allArticles.length; k++) {
-        allArticles[k].classList.remove("fx-processed");
-        processTweet(allArticles[k]);
+    var closeBtn = document.createElement("button");
+    closeBtn.innerHTML = "&#10005;";
+    closeBtn.style.cssText = [
+      "position:fixed",
+      "top:12px",
+      "right:16px",
+      "background:rgba(255,255,255,0.1)",
+      "color:#fff",
+      "border:none",
+      "border-radius:999px",
+      "width:40px",
+      "height:40px",
+      "font-size:18px",
+      "cursor:pointer",
+      "z-index:3",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "transition:background 0.15s",
+    ].join(";");
+    closeBtn.addEventListener("mouseenter", function () {
+      closeBtn.style.background = "rgba(255,255,255,0.25)";
+    });
+    closeBtn.addEventListener("mouseleave", function () {
+      closeBtn.style.background = "rgba(255,255,255,0.1)";
+    });
+
+    overlayEl.appendChild(overlayPrev);
+    overlayEl.appendChild(overlayNext);
+    overlayEl.appendChild(overlayImg);
+    overlayEl.appendChild(overlayVideo);
+    overlayEl.appendChild(closeBtn);
+    document.body.appendChild(overlayEl);
+
+    overlayEl.addEventListener("click", function (e) {
+      if (e.target === overlayEl) {
+        hideOverlay();
+      }
+    });
+    overlayImg.addEventListener("click", function () {
+      if (overlayImg.src && overlayImg.src.indexOf("data:") !== 0) {
+        window.open(overlayImg.src, "_blank");
+      } else if (overlayMedia && overlayMedia[overlayIndex]) {
+        window.open(overlayMedia[overlayIndex].url, "_blank");
+      }
+    });
+    overlayPrev.addEventListener("click", function (e) {
+      e.stopPropagation();
+      navigateOverlay(-1);
+    });
+    overlayNext.addEventListener("click", function (e) {
+      e.stopPropagation();
+      navigateOverlay(1);
+    });
+    closeBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      hideOverlay();
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (overlayEl && overlayEl.style.display !== "none") {
+        if (e.key === "Escape") {
+          hideOverlay();
+        } else if (e.key === "ArrowLeft") {
+          navigateOverlay(-1);
+        } else if (e.key === "ArrowRight") {
+          navigateOverlay(1);
+        }
+      }
+    });
+  }
+
+  function showOverlay(mediaAll, index) {
+    createOverlay();
+    overlayMedia = mediaAll;
+    overlayIndex = index;
+
+    var item = mediaAll[index];
+    var isVideo = item.type === "video" || item.type === "animated_gif";
+
+    if (isVideo) {
+      overlayImg.style.display = "none";
+      overlayVideo.style.display = "block";
+
+      var videoSrc = (item.video && item.video.urls && item.video.urls[0]) || item.url || "";
+      logVerbose("Video source:", videoSrc);
+
+      overlayVideo.poster = "";
+      overlayVideo.src = videoSrc;
+      overlayVideo.currentTime = 0;
+      overlayVideo.play().catch(function (err) {
+        logVerbose("Video autoplay prevented:", err);
+      });
+    } else {
+      overlayVideo.style.display = "none";
+      overlayVideo.pause();
+      overlayVideo.src = "";
+      overlayVideo.poster = "";
+      overlayImg.style.display = "block";
+      overlayImg.src = item.url;
     }
+
+    overlayEl.style.display = "flex";
+    setTimeout(function () {
+      overlayEl.style.opacity = "1";
+    }, 10);
+
+    var showPrev = mediaAll.length > 1;
+    overlayPrev.style.display = showPrev ? "flex" : "none";
+    overlayNext.style.display = showPrev ? "flex" : "none";
+  }
+
+  function hideOverlay() {
+    overlayImg.src = "";
+    overlayVideo.pause();
+    overlayVideo.src = "";
+    overlayVideo.poster = "";
+    overlayEl.style.opacity = "0";
+    setTimeout(function () {
+      overlayEl.style.display = "none";
+    }, 200);
+    overlayMedia = null;
+    overlayIndex = 0;
+  }
+
+  function navigateOverlay(direction) {
+    if (!overlayMedia || overlayMedia.length < 2) return;
+    overlayIndex = (overlayIndex + direction + overlayMedia.length) % overlayMedia.length;
+    showOverlay(overlayMedia, overlayIndex);
+  }
+
+  // ==================== HELPERS ====================
+
+  function extractTweetData(tweetNode) {
+    var link = tweetNode.querySelector('a[href*="/status/"]');
+    if (!link) return null;
+    var m = link.href.match(/(?:twitter|x)\.com\/([^/]+)\/status\/(\d+)/);
+    return m ? { user: m[1], id: m[2] } : null;
+  }
+
+  function findShowButton(tweetNode) {
+    var buttons = tweetNode.querySelectorAll('button[role="button"]');
+    for (var i = 0; i < buttons.length; i++) {
+      var txt = (buttons[i].textContent || "").trim();
+      // Exact match only — avoids false positives on "Show more", "Show replies", etc.
+      if (txt === "Show" || txt === "Mostrar") {
+        return buttons[i];
+      }
+    }
+    return null;
+  }
+
+  function findRestrictionText(tweetNode) {
+    var divs = tweetNode.querySelectorAll("div");
+    for (var i = 0; i < divs.length; i++) {
+      var txt = divs[i].innerText || divs[i].textContent || "";
+      var normalized = txt.replace(/\s+/g, " ").toLowerCase();
+
+      // Check for adult content indicators in multiple languages
+      // English: "adult content", "age restriction", "sensitive content"
+      // Portuguese: "conteúdo adulto", "restrição de idade"
+      // Spanish: "contenido para adultos", "restricción de edad"
+      // French: "contenu adulte", "restriction d'âge"
+      if (
+        normalized.indexOf("adult content") !== -1 ||
+        normalized.indexOf("age restriction") !== -1 ||
+        normalized.indexOf("conteudo adulto") !== -1 ||
+        normalized.indexOf("conte\u00fado adulto") !== -1 ||
+        normalized.indexOf("restricao de idade") !== -1 ||
+        normalized.indexOf("restri\u00e7\u00e3o de idade") !== -1 ||
+        normalized.indexOf("contenido para adultos") !== -1 ||
+        normalized.indexOf("contenu adulte") !== -1 ||
+        normalized.indexOf("sensitive media") !== -1 ||
+        normalized.indexOf("sensitive content") !== -1
+      ) {
+        return divs[i];
+      }
+    }
+    return null;
+  }
+
+  function hasAgeRestriction(tweetNode) {
+    var restrictionText = findRestrictionText(tweetNode);
+    var showBtn = findShowButton(tweetNode);
+
+    // If we have restriction text, it's definitely age-restricted
+    if (restrictionText) return true;
+
+    // A "Show" button alone (without restriction text) is not enough evidence —
+    // it could be a generic "Show" button on a normal post.
+    // Only accept if the button text is EXACTLY "Show" or "Mostrar" (already
+    // guaranteed by findShowButton) AND restriction text is present nearby.
+    // Without restriction text, a bare "Show" button is too risky.
+    if (showBtn) {
+      logVerbose("Show button found but no restriction text — skipping (not age-restricted)");
+    }
+
+    return false;
+  }
+
+  function findMediaContainer(tweetNode) {
+    var btn = findShowButton(tweetNode);
+    var textDiv = findRestrictionText(tweetNode);
+
+    // Strategy 1: Try to find actual media wrapper via data-testid
+    var mediaRoot = tweetNode.querySelector('[data-testid="tweetPhoto"]');
+    if (!mediaRoot) {
+      mediaRoot = tweetNode.querySelector('[data-testid="videoPlayer"]');
+    }
+
+    // Strategy 2: Fall back to parent traversal from button
+    if (!mediaRoot && btn) {
+      var el = btn;
+      for (var i = 0; i < 5; i++) {
+        if (!el.parentElement) break;
+        el = el.parentElement;
+        // Guard: stop if we hit the action bar or tweet text — went too high
+        if (el.querySelector('[data-testid="caret"]') || el.querySelector('[data-testid="tweetText"]')) {
+          break;
+        }
+        // Check if this looks like a media container (has image/video elements)
+        if (el.querySelector('img, video, [data-testid="tweetPhoto"]')) {
+          mediaRoot = el;
+          break;
+        }
+      }
+    }
+
+    // Strategy 3: Fall back to parent traversal from restriction text
+    if (!mediaRoot && textDiv) {
+      var el2 = textDiv;
+      for (var j = 0; j < 6; j++) {
+        if (!el2.parentElement) break;
+        el2 = el2.parentElement;
+        // Guard: stop if we hit the action bar or tweet text — went too high
+        if (el2.querySelector('[data-testid="caret"]') || el2.querySelector('[data-testid="tweetText"]')) {
+          break;
+        }
+        // Check if this looks like a media container
+        if (el2.querySelector('img, video, [data-testid="tweetPhoto"]')) {
+          mediaRoot = el2;
+          break;
+        }
+      }
+    }
+
+    // Strategy 4: Fallback — climb from button/text without requiring media elements.
+    // Handles overlays that use CSS backgrounds or placeholders instead of <img>/<video>.
+    if (!mediaRoot && btn) {
+      var el3 = btn.parentElement;
+      for (var k = 0; k < 4 && el3; k++) {
+        if (el3.querySelector('[data-testid="caret"]') || el3.querySelector('[data-testid="tweetText"]')) {
+          break; // went too high
+        }
+        var cls3 = el3.className || "";
+        if (
+          cls3.indexOf("r-1iusvr4") !== -1 ||
+          cls3.indexOf("r-16y2uox") !== -1 ||
+          cls3.indexOf("r-kzbkwu") !== -1
+        ) {
+          mediaRoot = el3;
+          break;
+        }
+        el3 = el3.parentElement;
+      }
+    }
+
+    if (!mediaRoot && textDiv) {
+      var el4 = textDiv.parentElement;
+      for (var l = 0; l < 5 && el4; l++) {
+        if (el4.querySelector('[data-testid="caret"]') || el4.querySelector('[data-testid="tweetText"]')) {
+          break; // went too high
+        }
+        var cls4 = el4.className || "";
+        if (
+          cls4.indexOf("r-1iusvr4") !== -1 ||
+          cls4.indexOf("r-16y2uox") !== -1 ||
+          cls4.indexOf("r-kzbkwu") !== -1
+        ) {
+          mediaRoot = el4;
+          break;
+        }
+        el4 = el4.parentElement;
+      }
+    }
+
+    // Final guard: if container contains action bar, it's too high
+    if (mediaRoot && mediaRoot.querySelector('[data-testid="caret"]')) {
+      logVerbose("Media container rejected: contains action bar");
+      return null;
+    }
+
+    if (mediaRoot) {
+      logVerbose("Media container found:", mediaRoot.className.slice(0, 80));
+    }
+
+    return mediaRoot;
+  }
+
+  function findActionBar(tweetNode) {
+    var moreBtn = tweetNode.querySelector('[data-testid="caret"]');
+    if (moreBtn) {
+      var el = moreBtn;
+      for (var s = 0; s < 5; s++) {
+        if (!el.parentElement) break;
+        el = el.parentElement;
+        var cls = el.className || "";
+        if (cls.indexOf("r-1cmwbt1") !== -1) {
+          logVerbose("Action bar found via caret/r-1cmwbt1");
+          return el;
+        }
+      }
+      if (moreBtn.parentElement) {
+        logVerbose("Action bar found via caret/parent");
+        return moreBtn.parentElement;
+      }
+    }
+
+    var grokBtn = tweetNode.querySelector('button[aria-label*="Grok" i]');
+    if (grokBtn) {
+      var el2 = grokBtn;
+      for (var s2 = 0; s2 < 5; s2++) {
+        if (!el2.parentElement) break;
+        el2 = el2.parentElement;
+        var cls2 = el2.className || "";
+        if (cls2.indexOf("r-1cmwbt1") !== -1) {
+          logVerbose("Action bar found via Grok/r-1cmwbt1");
+          return el2;
+        }
+      }
+      if (grokBtn.parentElement) {
+        logVerbose("Action bar found via Grok/parent");
+        return grokBtn.parentElement;
+      }
+    }
+
+    var allDivs = tweetNode.querySelectorAll("div");
+    for (var i = 0; i < allDivs.length; i++) {
+      var cn = allDivs[i].className || "";
+      if (cn.indexOf("r-1kkk96v") !== -1) {
+        var flexRow = allDivs[i].querySelector('[class*="r-1cmwbt1"]');
+        if (flexRow) {
+          logVerbose("Action bar found via r-1kkk96v/r-1cmwbt1");
+          return flexRow;
+        }
+        var firstChild = allDivs[i].firstElementChild;
+        if (firstChild) {
+          logVerbose("Action bar found via r-1kkk96v/first-child");
+          return firstChild;
+        }
+        logVerbose("Action bar found via r-1kkk96v/self");
+        return allDivs[i];
+      }
+    }
+
+    return null;
+  }
+
+  // ==================== TRIGGER REVEAL ====================
+
+  function triggerReveal(mediaContainer, tweetData, btn, source) {
+    logVerbose("Reveal source:", source, "tweet:", tweetData && tweetData.id);
+    fetchAndReplace(mediaContainer, tweetData, btn);
+  }
+
+  // ==================== EYE BUTTON ====================
+
+  function createEyeButton(actionBar, mediaContainer, tweetData) {
+    var existing = actionBar.querySelector(".fx-reveal-btn");
+    if (existing) return existing;
+
+    var btn = document.createElement("button");
+    btn.className = "fx-reveal-btn";
+    btn.title = "Reveal image";
+
+    btn.innerHTML = [
+      '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block">',
+      '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>',
+      '<circle cx="12" cy="12" r="3"/>',
+      "</svg>",
+    ].join("");
+
+    btn.style.cssText = [
+      "display:inline-flex",
+      "align-items:center",
+      "justify-content:center",
+      "background:transparent",
+      "color:rgb(113,118,123)",
+      "border:none",
+      "border-radius:9999px",
+      "width:34px",
+      "height:34px",
+      "padding:0",
+      "margin:0",
+      "cursor:pointer",
+      "line-height:1",
+      "transition:color 0.15s, background 0.15s",
+      "pointer-events:auto",
+    ].join(";");
+
+    btn.addEventListener("mouseenter", function () {
+      btn.style.background = "rgba(239,243,244,0.1)";
+      btn.style.color = "rgb(29,155,240)";
+    });
+    btn.addEventListener("mouseleave", function () {
+      btn.style.background = "transparent";
+      btn.style.color = "rgb(113,118,123)";
+    });
+
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      e.preventDefault();
+      triggerReveal(mediaContainer, tweetData, btn, "manual");
+    });
+
+    actionBar.insertBefore(btn, actionBar.firstChild);
+    logVerbose("Eye button added to action bar");
+    return btn;
+  }
+
+  // ==================== API FETCH & REPLACE ====================
+
+  function fetchAndReplace(container, tweetData, btn) {
+    var url = FX_API + tweetData.user + "/status/" + tweetData.id;
+    logVerbose("Fetching:", url);
+
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: url,
+      onload: function (res) {
+        try {
+          var data = JSON.parse(res.responseText);
+          var mediaAll = data.tweet && data.tweet.media && data.tweet.media.all;
+          if (!mediaAll || mediaAll.length === 0) {
+            logVerbose("No media found in API response");
+            showError(container, "No media found");
+            return;
+          }
+
+          logVerbose("Media found:", mediaAll.length, "item(s)");
+          if (mediaAll.length > 0 && (mediaAll[0].type === "video" || mediaAll[0].type === "animated_gif")) {
+            logVerbose(
+              "Video item details:",
+              mediaAll[0].url,
+              "video.urls:",
+              mediaAll[0].video && mediaAll[0].video.urls,
+            );
+          }
+          replaceWithGrid(container, mediaAll);
+        } catch (err) {
+          console.error("[fx-reveal] API parse error:", err);
+          showError(container, "API parse error");
+        }
+      },
+      onerror: function () {
+        console.error("[fx-reveal] Network error");
+        showError(container, "Network error");
+      },
+    });
+
+    if (btn && btn.parentElement) {
+      btn.remove();
+    }
+  }
+
+  function replaceWithGrid(container, mediaAll) {
+    var count = mediaAll.length;
+    logVerbose("Replacing with grid layout, count:", count);
+
+    container.innerHTML = "";
+
+    // Mark this container as FX-revealed
+    container.setAttribute("data-fx-revealed", "1");
+
+    var containerRules = [
+      "background:none",
+      "filter:none",
+      "position:relative",
+      "border-radius:16px",
+      "overflow:hidden",
+    ];
+
+    if (count === 1) {
+      containerRules.push("display:block");
+      container.style.cssText = containerRules.join(";");
+
+      var singleItem = mediaAll[0];
+      var isSingleVideo = singleItem.type === "video" || singleItem.type === "animated_gif";
+      var singleImg = makeGridImage(mediaAll, 0, !!isSingleVideo);
+      if (isSingleVideo) {
+        singleImg.style.minHeight = "200px";
+        singleImg.style.width = "100%";
+      } else {
+        singleImg.style.width = "100%";
+        singleImg.style.height = "auto";
+      }
+      container.appendChild(singleImg);
+    } else if (count === 2) {
+      containerRules.push("display:grid");
+      containerRules.push("grid-template-columns:1fr 1fr");
+      containerRules.push("gap:2px");
+      container.style.cssText = containerRules.join(";");
+
+      for (var i = 0; i < count; i++) {
+        var item = makeGridImage(mediaAll, i, true);
+        container.appendChild(item);
+      }
+    } else if (count === 3) {
+      containerRules.push("display:grid");
+      containerRules.push("grid-template-columns:1fr 1fr");
+      containerRules.push("grid-template-rows:1fr 1fr");
+      containerRules.push("gap:2px");
+      container.style.cssText = containerRules.join(";");
+      container.style.maxHeight = "320px";
+
+      var leftUrl = mediaAll[0].url;
+      var leftCell = document.createElement("div");
+      leftCell.style.cssText = "display:flex;width:100%;height:100%;overflow:hidden;cursor:pointer;position:relative";
+      leftCell.style.gridRow = "1 / -1";
+      leftCell.style.gridColumn = "1 / 2";
+
+      var leftImg = document.createElement("img");
+      leftImg.src = leftUrl;
+      leftImg.alt = "";
+      leftImg.draggable = false;
+      leftImg.style.cssText =
+        "display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;min-width:0;min-height:0";
+
+      leftCell.appendChild(leftImg);
+      leftCell.addEventListener("click", function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        showOverlay(mediaAll, 0);
+      });
+      container.appendChild(leftCell);
+
+      var img1 = makeGridImage(mediaAll, 1, true);
+      img1.style.gridRow = "1 / 2";
+      img1.style.gridColumn = "2 / 3";
+      container.appendChild(img1);
+
+      var img2 = makeGridImage(mediaAll, 2, true);
+      img2.style.gridRow = "2 / 3";
+      img2.style.gridColumn = "2 / 3";
+      container.appendChild(img2);
+    } else if (count >= 4) {
+      containerRules.push("display:grid");
+      containerRules.push("grid-template-columns:1fr 1fr");
+      containerRules.push("gap:2px");
+      container.style.cssText = containerRules.join(";");
+      container.style.maxHeight = "320px";
+
+      for (var j = 0; j < Math.min(count, 4); j++) {
+        var item2 = makeGridImage(mediaAll, j, true);
+        container.appendChild(item2);
+      }
+    }
+
+    // Add subtle FX badge to indicate media was revealed by the script
+    var badge = document.createElement("div");
+    badge.textContent = "FX";
+    badge.style.cssText = [
+      "position:absolute",
+      "top:6px",
+      "right:6px",
+      "background:rgba(29,155,240,0.85)",
+      "color:#fff",
+      "font-size:10px",
+      "font-weight:700",
+      "padding:2px 5px",
+      "border-radius:4px",
+      "z-index:10",
+      "pointer-events:none",
+      "letter-spacing:0.5px",
+    ].join(";");
+    container.appendChild(badge);
+
+    logVerbose("Grid layout applied, images:", count);
+  }
+
+  function makeGridImage(mediaAll, index, square) {
+    var mediaUrl = mediaAll[index].url;
+    var isVideo = mediaAll[index].type === "video" || mediaAll[index].type === "animated_gif";
+    var urlIsVideo =
+      mediaUrl.match(/\.(mp4|webm|mov)(\?|$)/i) ||
+      mediaUrl.indexOf("/amplify_video/") !== -1 ||
+      mediaUrl.indexOf("/video_tweet/") !== -1;
+
+    var containerDiv = document.createElement("div");
+    containerDiv.style.cssText = [
+      "display:flex",
+      "width:100%",
+      "height:100%",
+      "overflow:hidden",
+      "cursor:pointer",
+      "position:relative",
+    ].join(";");
+
+    if (isVideo && urlIsVideo) {
+      containerDiv.style.background = "#1a1a2e";
+      containerDiv.style.justifyContent = "center";
+      containerDiv.style.alignItems = "center";
+    } else {
+      var img = document.createElement("img");
+      img.src = mediaUrl;
+      img.alt = "";
+      img.draggable = false;
+
+      var imgRules = [
+        "display:block",
+        "width:100%",
+        "height:100%",
+        "object-fit:cover",
+        "pointer-events:none",
+        "min-width:0",
+        "min-height:0",
+      ];
+
+      if (!square) {
+        imgRules.push("object-fit:contain");
+        imgRules.push("height:auto");
+      } else {
+        imgRules.push("aspect-ratio:1 / 1");
+      }
+
+      img.style.cssText = imgRules.join(";");
+
+      img.onerror = function () {
+        logVerbose("Thumbnail failed to load:", mediaUrl);
+        img.style.display = "none";
+        containerDiv.style.background = "#1a1a2e";
+        containerDiv.style.justifyContent = "center";
+        containerDiv.style.alignItems = "center";
+      };
+
+      containerDiv.appendChild(img);
+    }
+
+    if (isVideo) {
+      var playBtn = document.createElement("div");
+      playBtn.innerHTML = "&#9654;";
+      playBtn.style.cssText = [
+        "position:absolute",
+        "top:50%",
+        "left:50%",
+        "transform:translate(-50%,-50%)",
+        "background:rgba(0,0,0,0.65)",
+        "color:#fff",
+        "border-radius:50%",
+        "width:44px",
+        "height:44px",
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "font-size:20px",
+        "pointer-events:none",
+        "z-index:2",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.3)",
+      ].join(";");
+      containerDiv.appendChild(playBtn);
+    }
+
+    containerDiv.addEventListener("click", function (e) {
+      e.stopPropagation();
+      e.preventDefault();
+      logVerbose((isVideo ? "Video" : "Image") + " clicked, opening overlay index:", index);
+      showOverlay(mediaAll, index);
+    });
+
+    return containerDiv;
+  }
+
+  function showError(container, msg) {
+    var el = document.createElement("div");
+    el.textContent = "\u26A0 fxTwitter: " + msg;
+    el.style.cssText = [
+      "padding:8px 12px",
+      "margin:4px",
+      "color:#fff",
+      "background:rgba(200,0,0,0.8)",
+      "font-size:13px",
+      "border-radius:6px",
+      "text-align:center",
+    ].join(";");
+    container.appendChild(el);
+  }
+
+  // ==================== SETTINGS MODAL ====================
+
+  var _settingsModalOpen = false;
+
+  function injectSettingsStyles() {
+    if (document.getElementById("fx-reveal-settings-style")) return;
+
+    var style = document.createElement("style");
+    style.id = "fx-reveal-settings-style";
+    style.textContent = [
+      "#fx-reveal-settings-overlay {",
+      "  position: fixed;",
+      "  inset: 0;",
+      "  z-index: 1000000;",
+      "  display: flex;",
+      "  align-items: center;",
+      "  justify-content: center;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-backdrop {",
+      "  position: absolute;",
+      "  inset: 0;",
+      "  background: rgba(0,0,0,0.72);",
+      "  backdrop-filter: blur(6px);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-modal {",
+      "  position: relative;",
+      "  width: min(560px, calc(100vw - 32px));",
+      "  max-height: calc(100vh - 32px);",
+      "  overflow: auto;",
+      "  border-radius: 20px;",
+      "  background: rgba(15,20,25,0.96);",
+      "  color: rgb(231,233,234);",
+      "  border: 1px solid rgba(255,255,255,0.08);",
+      "  box-shadow: 0 20px 80px rgba(0,0,0,0.45);",
+      "  padding: 20px;",
+      "  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-header {",
+      "  display: flex;",
+      "  justify-content: space-between;",
+      "  align-items: flex-start;",
+      "  margin-bottom: 20px;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-header h2 {",
+      "  margin: 0 0 4px 0;",
+      "  font-size: 20px;",
+      "  font-weight: 700;",
+      "  color: rgb(231,233,234);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-header p {",
+      "  margin: 0;",
+      "  font-size: 13px;",
+      "  color: rgb(113,118,123);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-close {",
+      "  background: transparent;",
+      "  border: none;",
+      "  color: rgb(113,118,123);",
+      "  font-size: 18px;",
+      "  cursor: pointer;",
+      "  padding: 4px 8px;",
+      "  border-radius: 999px;",
+      "  line-height: 1;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-close:hover {",
+      "  background: rgba(239,243,244,0.1);",
+      "  color: rgb(231,233,234);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-body {",
+      "  display: flex;",
+      "  flex-direction: column;",
+      "  gap: 20px;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-section h3 {",
+      "  margin: 0 0 12px 0;",
+      "  font-size: 14px;",
+      "  font-weight: 600;",
+      "  color: rgb(231,233,234);",
+      "  text-transform: uppercase;",
+      "  letter-spacing: 0.5px;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row {",
+      "  display: flex;",
+      "  justify-content: space-between;",
+      "  align-items: center;",
+      "  padding: 8px 0;",
+      "  cursor: pointer;",
+      "  font-size: 14px;",
+      "  color: rgb(231,233,234);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row input[type='checkbox'] {",
+      "  appearance: none;",
+      "  -webkit-appearance: none;",
+      "  width: 40px;",
+      "  height: 22px;",
+      "  border-radius: 11px;",
+      "  background: rgba(113,118,123,0.4);",
+      "  border: none;",
+      "  cursor: pointer;",
+      "  position: relative;",
+      "  transition: background 0.15s;",
+      "  flex-shrink: 0;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row input[type='checkbox']::after {",
+      "  content: '';",
+      "  position: absolute;",
+      "  top: 2px;",
+      "  left: 2px;",
+      "  width: 18px;",
+      "  height: 18px;",
+      "  border-radius: 50%;",
+      "  background: rgb(231,233,234);",
+      "  transition: transform 0.15s;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row input[type='checkbox']:checked {",
+      "  background: rgb(29,155,240);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row input[type='checkbox']:checked::after {",
+      "  transform: translateX(18px);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row input[type='checkbox']:disabled {",
+      "  opacity: 0.4;",
+      "  cursor: not-allowed;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-toggle-row.is-disabled span {",
+      "  color: rgb(113,118,123);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-help {",
+      "  margin: 0 0 8px 0;",
+      "  font-size: 12px;",
+      "  color: rgb(113,118,123);",
+      "  line-height: 1.4;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-settings-footer {",
+      "  display: flex;",
+      "  justify-content: flex-end;",
+      "  gap: 8px;",
+      "  margin-top: 20px;",
+      "  padding-top: 16px;",
+      "  border-top: 1px solid rgba(255,255,255,0.08);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-btn {",
+      "  padding: 8px 16px;",
+      "  border-radius: 999px;",
+      "  font-size: 14px;",
+      "  font-weight: 600;",
+      "  cursor: pointer;",
+      "  border: none;",
+      "  transition: background 0.15s;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-btn-secondary {",
+      "  background: rgba(239,243,244,0.1);",
+      "  color: rgb(231,233,234);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-btn-secondary:hover {",
+      "  background: rgba(239,243,244,0.2);",
+      "}",
+      "#fx-reveal-settings-overlay .fx-btn-primary {",
+      "  background: rgb(29,155,240);",
+      "  color: #fff;",
+      "}",
+      "#fx-reveal-settings-overlay .fx-btn-primary:hover {",
+      "  background: rgb(26,140,216);",
+      "}",
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function createSettingsModal() {
+    var root = document.createElement("div");
+    root.id = "fx-reveal-settings-overlay";
+
+    var backdrop = document.createElement("div");
+    backdrop.className = "fx-settings-backdrop";
+
+    var modal = document.createElement("div");
+    modal.className = "fx-settings-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "fx-settings-title");
+
+    var header = document.createElement("div");
+    header.className = "fx-settings-header";
+
+    var titleGroup = document.createElement("div");
+
+    var title = document.createElement("h2");
+    title.id = "fx-settings-title";
+    title.textContent = "Age Bypass Settings";
+
+    var subtitle = document.createElement("p");
+    subtitle.textContent = "Configure reveal behavior and debugging.";
+
+    titleGroup.appendChild(title);
+    titleGroup.appendChild(subtitle);
+
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "fx-settings-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.textContent = "\u2715";
+
+    header.appendChild(titleGroup);
+    header.appendChild(closeBtn);
+
+    var body = document.createElement("div");
+    body.className = "fx-settings-body";
+
+    // Debug section
+    var debugSection = document.createElement("section");
+    debugSection.className = "fx-settings-section";
+
+    var debugTitle = document.createElement("h3");
+    debugTitle.textContent = "Debug";
+
+    var debugLabel = document.createElement("label");
+    debugLabel.className = "fx-toggle-row";
+
+    var debugSpan = document.createElement("span");
+    debugSpan.textContent = "Verbose logging";
+
+    var debugInput = document.createElement("input");
+    debugInput.type = "checkbox";
+    debugInput.setAttribute("data-setting", "debugVerbose");
+
+    debugLabel.appendChild(debugSpan);
+    debugLabel.appendChild(debugInput);
+
+    debugSection.appendChild(debugTitle);
+    debugSection.appendChild(debugLabel);
+
+    // Experimental section
+    var expSection = document.createElement("section");
+    expSection.className = "fx-settings-section";
+
+    var expTitle = document.createElement("h3");
+    expTitle.textContent = "Experimental";
+
+    var autoRevealLabel = document.createElement("label");
+    autoRevealLabel.className = "fx-toggle-row";
+    autoRevealLabel.setAttribute("data-toggle-row", "autoReveal");
+
+    var autoRevealSpan = document.createElement("span");
+    autoRevealSpan.textContent = "Auto-reveal";
+
+    var autoRevealInput = document.createElement("input");
+    autoRevealInput.type = "checkbox";
+    autoRevealInput.setAttribute("data-setting", "experimental.autoReveal");
+
+    autoRevealLabel.appendChild(autoRevealSpan);
+    autoRevealLabel.appendChild(autoRevealInput);
+
+    var autoRevealHelp = document.createElement("p");
+    autoRevealHelp.className = "fx-settings-help";
+    autoRevealHelp.textContent = "Automatically reveals restricted media where allowed by the current mode.";
+
+    var revealOnPostLabel = document.createElement("label");
+    revealOnPostLabel.className = "fx-toggle-row";
+    revealOnPostLabel.setAttribute("data-toggle-row", "revealOnPost");
+
+    var revealOnPostSpan = document.createElement("span");
+    revealOnPostSpan.textContent = "Reveal on post";
+
+    var revealOnPostInput = document.createElement("input");
+    revealOnPostInput.type = "checkbox";
+    revealOnPostInput.setAttribute("data-setting", "experimental.revealOnPost");
+
+    revealOnPostLabel.appendChild(revealOnPostSpan);
+    revealOnPostLabel.appendChild(revealOnPostInput);
+
+    var revealOnPostHelp = document.createElement("p");
+    revealOnPostHelp.className = "fx-settings-help";
+    revealOnPostHelp.textContent =
+      "When enabled together with Auto-reveal, single post pages auto-reveal while feed stays manual.";
+
+    expSection.appendChild(expTitle);
+    expSection.appendChild(autoRevealLabel);
+    expSection.appendChild(autoRevealHelp);
+    expSection.appendChild(revealOnPostLabel);
+    expSection.appendChild(revealOnPostHelp);
+
+    body.appendChild(debugSection);
+    body.appendChild(expSection);
+
+    var footer = document.createElement("div");
+    footer.className = "fx-settings-footer";
+
+    var resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.className = "fx-btn fx-btn-secondary";
+    resetBtn.setAttribute("data-action", "reset");
+    resetBtn.textContent = "Reset";
+
+    var saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "fx-btn fx-btn-primary";
+    saveBtn.setAttribute("data-action", "save");
+    saveBtn.textContent = "Save";
+
+    footer.appendChild(resetBtn);
+    footer.appendChild(saveBtn);
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    modal.appendChild(footer);
+
+    root.appendChild(backdrop);
+    root.appendChild(modal);
+
+    return root;
+  }
+
+  function renderSettingsIntoModal(root) {
+    var inputs = root.querySelectorAll("input[data-setting]");
+    for (var i = 0; i < inputs.length; i++) {
+      var input = inputs[i];
+      var key = input.getAttribute("data-setting");
+      var value = false;
+
+      if (key === "debugVerbose") {
+        value = SETTINGS.debugVerbose;
+      } else if (key === "experimental.autoReveal") {
+        value = SETTINGS.experimental && SETTINGS.experimental.autoReveal;
+      } else if (key === "experimental.revealOnPost") {
+        value = SETTINGS.experimental && SETTINGS.experimental.revealOnPost;
+      }
+
+      input.checked = !!value;
+    }
+
+    // Disable revealOnPost when autoReveal is off
+    var autoRevealInput = root.querySelector('input[data-setting="experimental.autoReveal"]');
+    var revealOnPostInput = root.querySelector('input[data-setting="experimental.revealOnPost"]');
+    var revealOnPostLabel = root.querySelector('[data-toggle-row="revealOnPost"]');
+    if (autoRevealInput && revealOnPostInput && revealOnPostLabel) {
+      if (!autoRevealInput.checked) {
+        revealOnPostInput.disabled = true;
+        revealOnPostLabel.className = "fx-toggle-row is-disabled";
+      } else {
+        revealOnPostInput.disabled = false;
+        revealOnPostLabel.className = "fx-toggle-row";
+      }
+    }
+  }
+
+  function readSettingsFromModal(root) {
+    var inputs = root.querySelectorAll("input[data-setting]");
+    var result = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+
+    for (var i = 0; i < inputs.length; i++) {
+      var input = inputs[i];
+      var key = input.getAttribute("data-setting");
+      var checked = input.checked;
+
+      if (key === "debugVerbose") {
+        result.debugVerbose = checked;
+      } else if (key === "experimental.autoReveal") {
+        result.experimental.autoReveal = checked;
+      } else if (key === "experimental.revealOnPost") {
+        result.experimental.revealOnPost = checked;
+      }
+    }
+
+    return result;
+  }
+
+  function openSettingsModal() {
+    if (_settingsModalOpen) return;
+
+    injectSettingsStyles();
+
+    var overlay = createSettingsModal();
+    document.body.appendChild(overlay);
+    renderSettingsIntoModal(overlay);
+    _settingsModalOpen = true;
+
+    // Wire up autoReveal change listener to toggle revealOnPost disabled state
+    var autoRevealInput = overlay.querySelector('input[data-setting="experimental.autoReveal"]');
+    var revealOnPostInput = overlay.querySelector('input[data-setting="experimental.revealOnPost"]');
+    var revealOnPostLabel = overlay.querySelector('[data-toggle-row="revealOnPost"]');
+    if (autoRevealInput && revealOnPostInput && revealOnPostLabel) {
+      autoRevealInput.addEventListener("change", function () {
+        if (!autoRevealInput.checked) {
+          revealOnPostInput.disabled = true;
+          revealOnPostLabel.className = "fx-toggle-row is-disabled";
+        } else {
+          revealOnPostInput.disabled = false;
+          revealOnPostLabel.className = "fx-toggle-row";
+        }
+      });
+    }
+
+    // Backdrop click closes modal
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay || e.target.classList.contains("fx-settings-backdrop")) {
+        closeSettingsModal();
+      }
+    });
+
+    // Save button
+    var saveBtn = overlay.querySelector('[data-action="save"]');
+    saveBtn.addEventListener("click", function () {
+      var newSettings = readSettingsFromModal(overlay);
+      saveSettings(newSettings);
+      SETTINGS.debugVerbose = newSettings.debugVerbose;
+      SETTINGS.experimental.autoReveal = newSettings.experimental.autoReveal;
+      SETTINGS.experimental.revealOnPost = newSettings.experimental.revealOnPost;
+      logAlways("Settings saved");
+      closeSettingsModal();
+    });
+
+    // Reset button
+    var resetBtn = overlay.querySelector('[data-action="reset"]');
+    resetBtn.addEventListener("click", function () {
+      var defaults = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      saveSettings(defaults);
+      SETTINGS.debugVerbose = defaults.debugVerbose;
+      SETTINGS.experimental.autoReveal = defaults.experimental.autoReveal;
+      SETTINGS.experimental.revealOnPost = defaults.experimental.revealOnPost;
+      renderSettingsIntoModal(overlay);
+      logAlways("Settings reset to defaults");
+    });
+
+    logAlways("Settings modal opened");
+  }
+
+  function closeSettingsModal() {
+    var overlay = document.getElementById("fx-reveal-settings-overlay");
+    if (overlay) {
+      overlay.remove();
+    }
+    _settingsModalOpen = false;
+    logVerbose("Settings modal closed");
+  }
+
+  // ESC to close modal
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      var modal = document.getElementById("fx-reveal-settings-overlay");
+      if (modal) closeSettingsModal();
+    }
+  });
+
+  // ==================== MENU COMMAND ====================
+
+  if (typeof GM_registerMenuCommand !== "undefined") {
+    GM_registerMenuCommand("Age Bypass Settings", function () {
+      openSettingsModal();
+    });
+  }
+
+  // ==================== MAIN ====================
+
+  var PROCESSED_CLASS = "fx-rvl-processed";
+
+  function processTweet(tweetNode) {
+    if (!tweetNode || tweetNode.classList.contains(PROCESSED_CLASS)) return;
+    if (!hasAgeRestriction(tweetNode)) return;
+
+    var tweetData = extractTweetData(tweetNode);
+    if (!tweetData) {
+      logVerbose("Could not extract tweet data");
+      return;
+    }
+
+    var actionBar = findActionBar(tweetNode);
+    if (!actionBar) {
+      logVerbose("Could not find action bar for:", tweetData.user, tweetData.id);
+      return;
+    }
+
+    var mediaContainer = findMediaContainer(tweetNode);
+    if (!mediaContainer) {
+      logVerbose("Could not find media container for:", tweetData.user, tweetData.id);
+      return;
+    }
+
+    tweetNode.classList.add(PROCESSED_CLASS);
+    logVerbose("Processing tweet:", tweetData.user, tweetData.id);
+
+    var btn = createEyeButton(actionBar, mediaContainer, tweetData);
+
+    if (shouldAutoRevealHere() && canAutoReveal(tweetNode)) {
+      markAutoRevealPending(tweetNode);
+
+      var delay = isPostPage() ? 0 : 50;
+      setTimeout(function () {
+        try {
+          triggerReveal(mediaContainer, tweetData, btn, "auto");
+          markAutoRevealed(tweetNode);
+        } catch (err) {
+          clearAutoRevealPending(tweetNode);
+          logVerbose("Auto-reveal failed", err);
+        }
+      }, delay);
+    }
+  }
+
+  var observer = new MutationObserver(function (mutations) {
+    for (var m = 0; m < mutations.length; m++) {
+      var nodes = mutations[m].addedNodes;
+      for (var n = 0; n < nodes.length; n++) {
+        var node = nodes[n];
+        if (node.nodeType !== 1) continue;
+        if (node.matches && node.matches("article")) {
+          processTweet(node);
+        } else if (node.querySelector) {
+          var article = node.querySelector("article");
+          if (article) processTweet(article);
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  var allArticles = document.querySelectorAll("article");
+  for (var k = 0; k < allArticles.length; k++) {
+    allArticles[k].classList.remove("fx-processed");
+    processTweet(allArticles[k]);
+  }
 })();

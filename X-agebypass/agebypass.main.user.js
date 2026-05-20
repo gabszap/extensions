@@ -68,6 +68,23 @@
 
   var SETTINGS = loadSettings();
 
+  // ==================== API CACHE ====================
+  var _apiCache = {};
+  var _cacheTimeout = 30 * 60 * 1000; // 30 minutes
+
+  function getCachedResponse(key) {
+    if (_apiCache[key] && Date.now() - _apiCache[key].timestamp < _cacheTimeout) {
+      logVerbose("Cache hit for:", key);
+      return _apiCache[key].data;
+    }
+    return null;
+  }
+
+  function setCachedResponse(key, data) {
+    _apiCache[key] = { data: data, timestamp: Date.now() };
+    logVerbose("Cached response for:", key);
+  }
+
   // ==================== LOGGER ====================
 
   function logVerbose() {
@@ -389,33 +406,37 @@
     return null;
   }
 
+  function isRestrictionMatch(text) {
+    var normalized = text.replace(/\s+/g, " ").toLowerCase();
+    return (
+      normalized.indexOf("adult content") !== -1 ||
+      normalized.indexOf("age restriction") !== -1 ||
+      normalized.indexOf("conteudo adulto") !== -1 ||
+      normalized.indexOf("conte\u00fado adulto") !== -1 ||
+      normalized.indexOf("restricao de idade") !== -1 ||
+      normalized.indexOf("restri\u00e7\u00e3o de idade") !== -1 ||
+      normalized.indexOf("contenido para adultos") !== -1 ||
+      normalized.indexOf("contenu adulte") !== -1 ||
+      normalized.indexOf("sensitive media") !== -1 ||
+      normalized.indexOf("sensitive content") !== -1
+    );
+  }
+
   function findRestrictionText(tweetNode) {
     var divs = tweetNode.querySelectorAll("div");
+    var deepest = null;
+
+    // querySelectorAll returns elements in document order (parents before children).
+    // We want the DEEPEST (most nested) div whose text matches the restriction
+    // keywords, so we iterate through ALL matches and keep the last one that
+    // has no child divs that also match — i.e. the leaf-most match.
     for (var i = 0; i < divs.length; i++) {
       var txt = divs[i].innerText || divs[i].textContent || "";
-      var normalized = txt.replace(/\s+/g, " ").toLowerCase();
-
-      // Check for adult content indicators in multiple languages
-      // English: "adult content", "age restriction", "sensitive content"
-      // Portuguese: "conteúdo adulto", "restrição de idade"
-      // Spanish: "contenido para adultos", "restricción de edad"
-      // French: "contenu adulte", "restriction d'âge"
-      if (
-        normalized.indexOf("adult content") !== -1 ||
-        normalized.indexOf("age restriction") !== -1 ||
-        normalized.indexOf("conteudo adulto") !== -1 ||
-        normalized.indexOf("conte\u00fado adulto") !== -1 ||
-        normalized.indexOf("restricao de idade") !== -1 ||
-        normalized.indexOf("restri\u00e7\u00e3o de idade") !== -1 ||
-        normalized.indexOf("contenido para adultos") !== -1 ||
-        normalized.indexOf("contenu adulte") !== -1 ||
-        normalized.indexOf("sensitive media") !== -1 ||
-        normalized.indexOf("sensitive content") !== -1
-      ) {
-        return divs[i];
+      if (isRestrictionMatch(txt)) {
+        deepest = divs[i];
       }
     }
-    return null;
+    return deepest;
   }
 
   function hasAgeRestriction(tweetNode) {
@@ -441,99 +462,139 @@
     var btn = findShowButton(tweetNode);
     var textDiv = findRestrictionText(tweetNode);
 
-    // Strategy 1: Try to find actual media wrapper via data-testid
-    var mediaRoot = tweetNode.querySelector('[data-testid="tweetPhoto"]');
-    if (!mediaRoot) {
-      mediaRoot = tweetNode.querySelector('[data-testid="videoPlayer"]');
-    }
+    // Guard: Ensure we have a tweet article context
+    var tweetArticle = tweetNode.closest("article");
+    if (!tweetArticle) return null;
 
-    // Strategy 2: Fall back to parent traversal from button
-    if (!mediaRoot && btn) {
-      var el = btn;
-      for (var i = 0; i < 5; i++) {
-        if (!el.parentElement) break;
+    var mediaRoot = null;
+
+    // Find the outer media wrapper (r-9aw3ui) that contains both blur and overlay
+
+    // Strategy 1: Climb up from restriction text or Show button
+    var startEl = textDiv || btn;
+    if (startEl) {
+      var el = startEl;
+
+      for (var i = 0; i < 15 && el && el !== tweetArticle; i++) {
         el = el.parentElement;
-        // Guard: stop if we hit the action bar or tweet text — went too high
-        if (el.querySelector('[data-testid="caret"]') || el.querySelector('[data-testid="tweetText"]')) {
-          break;
-        }
-        // Check if this looks like a media container (has image/video elements)
-        if (el.querySelector('img, video, [data-testid="tweetPhoto"]')) {
+        if (!el || el === tweetArticle) break;
+
+        // Check if this element has aria-labelledby (media container marker)
+        var ariaLabelledBy = el.getAttribute("aria-labelledby");
+        var cls = el.className || "";
+
+        if (ariaLabelledBy && cls.indexOf("r-9aw3ui") !== -1) {
           mediaRoot = el;
+          logVerbose("Media container found via aria-labelledby + r-9aw3ui");
+          break;
+        }
+
+        // Stop if we've gone too high (into tweet text or header area)
+        if (el.querySelector('[data-testid="tweetText"]') ||
+            el.querySelector('[data-testid="caret"]')) {
           break;
         }
       }
     }
 
-    // Strategy 3: Fall back to parent traversal from restriction text
-    if (!mediaRoot && textDiv) {
-      var el2 = textDiv;
-      for (var j = 0; j < 6; j++) {
-        if (!el2.parentElement) break;
+    // Strategy 2: Direct DOM query for aria-labelledby candidates
+    if (!mediaRoot) {
+      var candidates = tweetNode.querySelectorAll('div[aria-labelledby]');
+      for (var j = 0; j < candidates.length; j++) {
+        var c = candidates[j];
+        var cCls = c.className || "";
+        if (cCls.indexOf("r-9aw3ui") !== -1) {
+          // Verify this container has restriction content inside
+          if (findRestrictionText(c) || findShowButton(c)) {
+            mediaRoot = c;
+            logVerbose("Media container found via aria-labelledby query");
+            break;
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Climb and keep last valid candidate
+    //    (Stops before tweetText or caret territory)
+    if (!mediaRoot && startEl) {
+      var el2 = startEl;
+      var candidate = null;
+
+      for (var k = 0; k < 12 && el2 && el2 !== tweetArticle; k++) {
         el2 = el2.parentElement;
-        // Guard: stop if we hit the action bar or tweet text — went too high
-        if (el2.querySelector('[data-testid="caret"]') || el2.querySelector('[data-testid="tweetText"]')) {
+        if (!el2 || el2 === tweetArticle) break;
+
+        // Stop climbing when we reach a container that's too broad
+        if (el2.querySelector('[data-testid="tweetText"]') ||
+            el2.querySelector('[data-testid="caret"]')) {
           break;
         }
-        // Check if this looks like a media container
-        if (el2.querySelector('img, video, [data-testid="tweetPhoto"]')) {
-          mediaRoot = el2;
-          break;
-        }
+
+        candidate = el2;
+        logVerbose("Media container candidate at depth", k, "tag:", el2.tagName,
+          "classes:", (el2.className || "").substring(0, 80));
+      }
+
+      if (candidate) {
+        mediaRoot = candidate;
+        logVerbose("Media container found (climb strategy)");
       }
     }
 
-    // Strategy 4: Fallback — climb from button/text without requiring media elements.
-    // Handles overlays that use CSS backgrounds or placeholders instead of <img>/<video>.
-    if (!mediaRoot && btn) {
-      var el3 = btn.parentElement;
-      for (var k = 0; k < 4 && el3; k++) {
-        if (el3.querySelector('[data-testid="caret"]') || el3.querySelector('[data-testid="tweetText"]')) {
-          break; // went too high
-        }
-        var cls3 = el3.className || "";
-        if (
-          cls3.indexOf("r-1iusvr4") !== -1 ||
-          cls3.indexOf("r-16y2uox") !== -1 ||
-          cls3.indexOf("r-kzbkwu") !== -1
-        ) {
-          mediaRoot = el3;
-          break;
-        }
-        el3 = el3.parentElement;
+    // Strategy 4: Fallback to data-testid media wrappers
+    if (!mediaRoot) {
+      mediaRoot = tweetNode.querySelector('[data-testid="tweetPhoto"]');
+      if (!mediaRoot) {
+        mediaRoot = tweetNode.querySelector('[data-testid="videoPlayer"]');
+      }
+      if (mediaRoot) {
+        logVerbose("Media container found via data-testid");
       }
     }
 
-    if (!mediaRoot && textDiv) {
-      var el4 = textDiv.parentElement;
-      for (var l = 0; l < 5 && el4; l++) {
-        if (el4.querySelector('[data-testid="caret"]') || el4.querySelector('[data-testid="tweetText"]')) {
-          break; // went too high
-        }
-        var cls4 = el4.className || "";
-        if (
-          cls4.indexOf("r-1iusvr4") !== -1 ||
-          cls4.indexOf("r-16y2uox") !== -1 ||
-          cls4.indexOf("r-kzbkwu") !== -1
-        ) {
-          mediaRoot = el4;
-          break;
-        }
-        el4 = el4.parentElement;
-      }
-    }
-
-    // Final guard: if container contains action bar, it's too high
-    if (mediaRoot && mediaRoot.querySelector('[data-testid="caret"]')) {
-      logVerbose("Media container rejected: contains action bar");
-      return null;
-    }
-
+    // Final validation: reject if too large or contains unrelated elements
     if (mediaRoot) {
-      logVerbose("Media container found:", mediaRoot.className.slice(0, 80));
+      if (mediaRoot.querySelector('[data-testid="tweetText"]')) {
+        logVerbose("Media container rejected: contains tweetText");
+        return null;
+      }
+      if (mediaRoot.querySelectorAll("article").length > 1) {
+        logVerbose("Media container rejected: contains multiple articles");
+        return null;
+      }
+      if (mediaRoot === tweetArticle) {
+        logVerbose("Media container rejected: is the article itself");
+        return null;
+      }
+      if (mediaRoot.querySelector('[data-testid="caret"]')) {
+        logVerbose("Media container rejected: contains action bar");
+        return null;
+      }
     }
 
     return mediaRoot;
+  }
+
+  /**
+   * Removes any residual blur filters and restriction overlay siblings
+   * that may remain in or above the container after reveal.
+   */
+  function cleanupAfterReveal(container, tweetNode) {
+    if (!container || !tweetNode) return;
+
+    var tweetArticle = tweetNode.closest("article");
+
+    // Remove blur/filter from all ancestors up to the article
+    var ancestor = container.parentElement;
+    while (ancestor && ancestor !== tweetArticle) {
+      var style = window.getComputedStyle(ancestor);
+      if (style.filter && style.filter !== "none") {
+        ancestor.style.filter = "none";
+        ancestor.style.webkitFilter = "none";
+        logVerbose("Removed filter from ancestor:", ancestor.tagName);
+      }
+      ancestor = ancestor.parentElement;
+    }
   }
 
   function findActionBar(tweetNode) {
@@ -597,9 +658,9 @@
 
   // ==================== TRIGGER REVEAL ====================
 
-  function triggerReveal(mediaContainer, tweetData, btn, source, onSuccess) {
+  function triggerReveal(mediaContainer, tweetData, btn, source, onSuccess, tweetNode) {
     logVerbose("Reveal source:", source, "tweet:", tweetData && tweetData.id);
-    fetchAndReplace(mediaContainer, tweetData, btn, onSuccess);
+    fetchAndReplace(mediaContainer, tweetData, btn, onSuccess, tweetNode);
   }
 
   // ==================== EYE BUTTON ====================
@@ -649,7 +710,8 @@
     btn.addEventListener("click", function (e) {
       e.stopPropagation();
       e.preventDefault();
-      triggerReveal(mediaContainer, tweetData, btn, "manual", null);
+      var parentArticle = btn.closest("article");
+      triggerReveal(mediaContainer, tweetData, btn, "manual", null, parentArticle);
     });
 
     actionBar.insertBefore(btn, actionBar.firstChild);
@@ -659,10 +721,25 @@
 
   // ==================== API FETCH & REPLACE ====================
 
-  function fetchAndReplace(container, tweetData, btn, onSuccess) {
+  function fetchAndReplace(container, tweetData, btn, onSuccess, tweetNode) {
     var url = FX_API + tweetData.user + "/status/" + tweetData.id;
-    logVerbose("Fetching:", url);
 
+    var cacheKey = tweetData.user + "/" + tweetData.id;
+    var cached = getCachedResponse(cacheKey);
+    if (cached) {
+      var mediaAll = cached.tweet && cached.tweet.media && cached.tweet.media.all;
+      if (mediaAll && mediaAll.length > 0) {
+        logVerbose("Using cached media:", mediaAll.length, "item(s)");
+        replaceWithGrid(container, mediaAll, tweetNode);
+        if (btn && btn.parentElement) {
+          btn.remove();
+        }
+        if (onSuccess) onSuccess();
+        return;
+      }
+    }
+
+    logVerbose("Fetching:", url);
     GM_xmlhttpRequest({
       method: "GET",
       url: url,
@@ -685,7 +762,8 @@
               mediaAll[0].video && mediaAll[0].video.urls,
             );
           }
-          replaceWithGrid(container, mediaAll);
+          setCachedResponse(cacheKey, data);
+          replaceWithGrid(container, mediaAll, tweetNode);
 
           // Remove button ONLY on success
           if (btn && btn.parentElement) {
@@ -706,7 +784,7 @@
     });
   }
 
-  function replaceWithGrid(container, mediaAll) {
+  function replaceWithGrid(container, mediaAll, tweetNode) {
     var count = mediaAll.length;
     logVerbose("Replacing with grid layout, count:", count);
 
@@ -719,8 +797,6 @@
       "background:none",
       "filter:none",
       "position:relative",
-      "border-radius:16px",
-      "overflow:hidden",
     ];
 
     if (count === 1) {
@@ -729,6 +805,32 @@
 
       var singleItem = mediaAll[0];
       var isSingleVideo = singleItem.type === "video" || singleItem.type === "animated_gif";
+
+      // Replicate Twitter's inner wrapper (r-k200y) for proper max-width
+      var maxContainerHeight = 510; // Twitter's max media height in feed
+      var innerMaxWidth = "100%";
+
+      // Use API dimensions to calculate proper max-width
+      var imgWidth = singleItem.width || 0;
+      var imgHeight = singleItem.height || 0;
+      if (imgWidth > 0 && imgHeight > 0) {
+        // Calculate the width the image would need at max height
+        var aspectRatio = imgWidth / imgHeight;
+        innerMaxWidth = Math.round(maxContainerHeight * aspectRatio) + "px";
+        logVerbose("Single image dimensions:", imgWidth, "x", imgHeight, "-> max-width:", innerMaxWidth);
+      }
+
+      var innerWrapper = document.createElement("div");
+      innerWrapper.style.cssText = "max-width:" + innerMaxWidth;
+
+      var mediaWrapper = document.createElement("div");
+      mediaWrapper.style.cssText = [
+        "border-radius:16px",
+        "overflow:hidden",
+        "border:1px solid rgb(47,51,54)",
+        "position:relative",
+      ].join(";");
+
       var singleImg = makeGridImage(mediaAll, 0, !!isSingleVideo);
       if (isSingleVideo) {
         singleImg.style.minHeight = "200px";
@@ -737,11 +839,36 @@
         singleImg.style.width = "100%";
         singleImg.style.height = "auto";
       }
-      container.appendChild(singleImg);
+
+      mediaWrapper.appendChild(singleImg);
+      innerWrapper.appendChild(mediaWrapper);
+      container.appendChild(innerWrapper);
+
+      // Badge goes inside mediaWrapper for proper positioning
+      var badge = document.createElement("div");
+      badge.textContent = "FX";
+      badge.style.cssText = [
+        "position:absolute",
+        "top:6px",
+        "right:6px",
+        "background:rgba(29,155,240,0.85)",
+        "color:#fff",
+        "font-size:10px",
+        "font-weight:700",
+        "padding:2px 5px",
+        "border-radius:4px",
+        "z-index:10",
+        "pointer-events:none",
+        "letter-spacing:0.5px",
+      ].join(";");
+      mediaWrapper.appendChild(badge);
     } else if (count === 2) {
       containerRules.push("display:grid");
       containerRules.push("grid-template-columns:1fr 1fr");
       containerRules.push("gap:2px");
+      containerRules.push("border-radius:16px");
+      containerRules.push("overflow:hidden");
+      containerRules.push("border:1px solid rgb(47,51,54)");
       container.style.cssText = containerRules.join(";");
 
       for (var i = 0; i < count; i++) {
@@ -753,6 +880,9 @@
       containerRules.push("grid-template-columns:1fr 1fr");
       containerRules.push("grid-template-rows:1fr 1fr");
       containerRules.push("gap:2px");
+      containerRules.push("border-radius:16px");
+      containerRules.push("overflow:hidden");
+      containerRules.push("border:1px solid rgb(47,51,54)");
       container.style.cssText = containerRules.join(";");
       container.style.maxHeight = "320px";
 
@@ -790,6 +920,9 @@
       containerRules.push("display:grid");
       containerRules.push("grid-template-columns:1fr 1fr");
       containerRules.push("gap:2px");
+      containerRules.push("border-radius:16px");
+      containerRules.push("overflow:hidden");
+      containerRules.push("border:1px solid rgb(47,51,54)");
       container.style.cssText = containerRules.join(";");
       container.style.maxHeight = "320px";
 
@@ -800,23 +933,32 @@
     }
 
     // Add subtle FX badge to indicate media was revealed by the script
-    var badge = document.createElement("div");
-    badge.textContent = "FX";
-    badge.style.cssText = [
-      "position:absolute",
-      "top:6px",
-      "right:6px",
-      "background:rgba(29,155,240,0.85)",
-      "color:#fff",
-      "font-size:10px",
-      "font-weight:700",
-      "padding:2px 5px",
-      "border-radius:4px",
-      "z-index:10",
-      "pointer-events:none",
-      "letter-spacing:0.5px",
-    ].join(";");
-    container.appendChild(badge);
+    // (single images already have their badge added inside the mediaWrapper)
+    if (count > 1) {
+      var badge = document.createElement("div");
+      badge.textContent = "FX";
+      badge.style.cssText = [
+        "position:absolute",
+        "top:6px",
+        "right:6px",
+        "background:rgba(29,155,240,0.85)",
+        "color:#fff",
+        "font-size:10px",
+        "font-weight:700",
+        "padding:2px 5px",
+        "border-radius:4px",
+        "z-index:10",
+        "pointer-events:none",
+        "letter-spacing:0.5px",
+      ].join(";");
+      container.appendChild(badge);
+    }
+
+    // Clean up the restriction overlay elements (blur, text, Show button)
+    // that may still be visible as sibling elements in the DOM
+    if (tweetNode) {
+      cleanupAfterReveal(container, tweetNode);
+    }
 
     logVerbose("Grid layout applied, images:", count);
   }
@@ -1426,7 +1568,7 @@
         try {
           triggerReveal(mediaContainer, tweetData, btn, "auto", function () {
             markAutoRevealed(tweetNode);
-          });
+          }, tweetNode);
         } catch (err) {
           clearAutoRevealPending(tweetNode);
           logVerbose("Auto-reveal failed", err);

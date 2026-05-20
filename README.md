@@ -24,7 +24,7 @@ Replaces X/Twitter's Grok button with a full local bookmark system. Features a g
 
 ### [Age Bypass for Twitter](./X-agebypass/)
 
-![Version](https://img.shields.io/badge/version-1.0.0-2ea44f)
+![Version](https://img.shields.io/badge/version-1.1.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 
 Displays age-restricted media on X/Twitter without age verification, using fxTwitter API to fetch images and videos.

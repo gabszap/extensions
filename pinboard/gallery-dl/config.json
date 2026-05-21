@@ -1,0 +1,20 @@
+{
+  "extractor": {
+    "instagram": {
+      "api": "rest",
+      "cookies": "gallery-dl/cookies.txt",
+      "sleep-request": [2, 5],
+      "retries": 5
+    }
+  },
+
+  "write-pages": true,
+
+  "filename": "{username}-{date:%Y-%m-%d}_{media_id}_{num}.{extension}",
+
+  "downloader": {
+    "http": {
+      "timeout": 30
+    }
+  }
+}

@@ -15,10 +15,10 @@ Upgrades the YouTube Music web app with playlist pinning/hiding, homepage sectio
 
 ### [Pinboard](./pinboard/)
 
-![Version](https://img.shields.io/badge/version-2.7.2-2ea44f)
+![Version](https://img.shields.io/badge/version-2.8.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 
-Replaces X/Twitter's Grok button with a full local bookmark system. Features a gallery with grid/list views, tag management, image merging, Telegram cloud backup, auto-tag rules.
+Replaces X/Twitter's Grok button with a full local bookmark system. Features a gallery with grid view, inline title editing, zoomable image viewer, statistics, tag management, image merging, Telegram cloud backup, auto-tag rules.
 
 [**Install**](https://github.com/gabszap/extensions/raw/refs/heads/main/pinboard/pinboard.user.js) | [Documentation](./pinboard/README.md)
 

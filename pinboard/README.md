@@ -1,6 +1,6 @@
 # Pinboard
 
-![Version](https://img.shields.io/badge/version-2.7.2-2ea44f)
+![Version](https://img.shields.io/badge/version-2.8.0-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 ![Type](https://img.shields.io/badge/type-userscript-1f6feb)
 ![Browsers](https://img.shields.io/badge/browsers-Chromium%20%7C%20Firefox-6f42c1)
@@ -34,11 +34,12 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 ### Gallery
 
 - Full-featured gallery modal opened with `Ctrl+B` (configurable).
-- **Grid view** and **List view** with toggle.
+- **Grid view** with a compact statistics panel.
 - **Search** by @username.
 - **Sort**: newest/oldest added, newest/oldest posted, favorites first, most images.
 - **Tag filtering** with chip UI.
 - **Favorites**: star/unstar bookmarks, sort by favorites.
+- **Inline title editing** from the gallery header with Enter/Escape/blur handling.
 - **Visual badges** on grid cards: Telegram backup, Twitter-only, partial backup, merged image, favorite, fallback warning.
 
 ### Tag system
@@ -51,6 +52,7 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 ### Image handling
 
 - **Max quality**: always requests `name=4096x4096` with fallback chain (4096 -> large -> Telegram backup URL).
+- **Image viewer** in bookmark details with zoom percentage, fit reset, click-to-zoom, pan, keyboard navigation, and original-image opening.
 - **Image merging**: stitches 2+ images from a post into one vertical image, uploads to Telegram.
 - **Download**: individual, all from a bookmark, merged, or bulk from selection. Files named `@handle_postId_index.ext`.
 - **Edit links**: full CRUD for image URLs within a bookmark, with thumbnail previews.
@@ -142,12 +144,12 @@ Click the link below and your userscript manager will offer to install it:
 
 ## Gallery
 
-The gallery supports two layouts:
+The gallery uses a compact grid layout plus a statistics panel:
 
 - **Grid view** — image cards with visual badges (backup status, favorite, merge).
-- **List view** — compact rows with configurable thumbnail size and hover preview popup.
+- **Statistics** — saved bookmark totals, perfis mais salvos, tags mais usadas, tag coverage, individual media asset counts, backups, and latest saved date.
 
-Both views support multi-select for bulk operations.
+The grid supports multi-select for bulk operations.
 
 ## Cloud Backup (Telegram)
 
@@ -214,8 +216,8 @@ Accessible from the gallery modal. Collapsible sections:
 
 | Section | Controls |
 |---|---|
-| **Appearance** | Gallery title, show/hide user labels, show/hide overlays, list preview size (40-150px), grid photo height (150-500px) |
-| **Keyboard Shortcuts** | Configurable bindings for gallery, close, view toggle, settings. Reset to defaults. |
+| **Appearance** | Show/hide user labels, show/hide overlays, grid photo height (150-500px) |
+| **Keyboard Shortcuts** | Configurable bindings for gallery, close, settings. Reset to defaults. |
 | **Cloud Backup** | Auto-backup toggle, Telegram Bot Token/Chat ID, Document/Photo upload methods, tag filter for selective backup |
 | **Automation** | Auto-tag rules configuration |
 | **Developer** | Debug mode toggle |
@@ -230,7 +232,6 @@ All data is stored via `GM_setValue`/`GM_getValue` in the userscript manager.
 | `x_bookmark_tags` | `string[]` | Tag list with order |
 | `x_bookmark_settings` | `object` | All settings |
 | `x_bookmark_autotag_rules` | `object[]` | Auto-tag rules |
-| `x_bookmark_view_mode` | `string` | `grid` / `list` preference |
 
 ## Project Structure
 

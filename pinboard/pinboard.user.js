@@ -9,7 +9,7 @@
 // @grant       GM_download
 // @connect     api.telegram.org
 // @connect     api.vxtwitter.com
-// @version     2.8.0
+// @version     2.8.1
 // @author      gabszap
 // @description Adds an internal bookmark system and tags to X, replacing the Grok button.
 // ==/UserScript==
@@ -485,6 +485,106 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     if (iconContainer) {
       iconContainer.style.color = isHovered ? BLUE_COLOR : restingColor;
     }
+  }
+  function getBookmarkById(bookmarkId) {
+    if (!bookmarkId) return null;
+    var bookmarks = getBookmarks();
+    for (var i = 0; i < bookmarks.length; i++) {
+      if (bookmarks[i].id === bookmarkId) return bookmarks[i];
+    }
+    return null;
+  }
+  function getBookmarkByPostUrl(postUrl) {
+    if (!postUrl) return null;
+    var normalizedPostUrl = normalizeStatusUrl(postUrl);
+    var bookmarks = getBookmarks();
+    for (var i = 0; i < bookmarks.length; i++) {
+      if (normalizeStatusUrl(bookmarks[i].postUrl) === normalizedPostUrl) return bookmarks[i];
+    }
+    return null;
+  }
+  function getCleanUniqueTags(tags) {
+    var cleanTags = [];
+    if (!tags || !tags.length) return cleanTags;
+    for (var i = 0; i < tags.length; i++) {
+      var tag = String(tags[i] || '').trim();
+      if (!tag || cleanTags.includes(tag)) continue;
+      cleanTags.push(tag);
+    }
+    return cleanTags;
+  }
+  function addGlobalTagIfNeeded(tag) {
+    var cleanTag = String(tag || '').trim();
+    if (!cleanTag) return '';
+    var tags = getTags();
+    if (!tags.includes(cleanTag)) {
+      tags.push(cleanTag);
+      saveTags(tags);
+    }
+    return cleanTag;
+  }
+  function saveBookmarkTags(bookmarkId, tags) {
+    var cleanTags = getCleanUniqueTags(tags);
+    var bookmarks = getBookmarks();
+    var updatedBookmark = null;
+    for (var i = 0; i < bookmarks.length; i++) {
+      if (bookmarks[i].id !== bookmarkId) continue;
+      bookmarks[i].tags = cleanTags;
+      updatedBookmark = bookmarks[i];
+      break;
+    }
+    if (!updatedBookmark) return null;
+    saveBookmarks(bookmarks);
+    if (document.getElementById('pinboard-gallery')) updateGalleryContent();
+    return updatedBookmark;
+  }
+  function setQuickTagButtonVisualState(button, postUrl, isHovered) {
+    if (!button) return;
+    var isSaved = postUrl && isBookmarked(postUrl);
+    button.style.display = isSaved ? 'inline-flex' : 'none';
+    button.style.backgroundColor = isHovered ? 'rgba(29, 155, 240, 0.1)' : 'transparent';
+    var iconContainer = button.querySelector('[data-pinboard-quick-tag-icon="true"]') || button.querySelector('svg') && button.querySelector('svg').parentElement;
+    if (iconContainer) iconContainer.style.color = isHovered ? BLUE_COLOR : GRAY_COLOR;
+  }
+  function updateQuickTagButtonsForPost(postUrl) {
+    var buttons = document.querySelectorAll('button[data-pinboard-quick-tag-injected="true"]');
+    buttons.forEach(function (button) {
+      if (button.getAttribute('data-pinboard-post-url') !== postUrl) return;
+      setQuickTagButtonVisualState(button, postUrl, false);
+    });
+  }
+  function isPinboardModalArtifact(element) {
+    if (!element) return false;
+    if (element.id === 'fx-reveal-overlay') return false;
+    if (element.getAttribute && element.getAttribute('data-pinboard-overlay') === 'true') return true;
+    if (element.id === 'pinboard-gallery') return true;
+    if (element.id === 'pinboard-stats-overlay') return true;
+    if (element.id === 'pinboard-settings-overlay') return true;
+    if (element.id === 'pinboard-autotag-overlay') return true;
+    if (element.id === 'pinboard-telegram-routes-overlay') return true;
+    if (element.id === 'pinboard-image-viewer') return true;
+    if (element.id === 'pinboard-quick-tag-popover') return true;
+    if (!element.id && element.style && (element.style.zIndex === '10001' || element.style.zIndex === '10002')) return true;
+    return false;
+  }
+  function getPinboardModalArtifacts() {
+    var candidates = document.querySelectorAll('[data-pinboard-overlay="true"], [style*="z-index: 10001"], [style*="z-index: 10002"], #pinboard-gallery, #pinboard-quick-tag-popover');
+    var artifacts = [];
+    candidates.forEach(function (element) {
+      if (element.parentNode !== document.body) return;
+      if (!isPinboardModalArtifact(element)) return;
+      artifacts.push(element);
+    });
+    return artifacts;
+  }
+  function closePinboardModalArtifacts() {
+    getPinboardModalArtifacts().forEach(function (element) {
+      element.remove();
+    });
+  }
+  function closePinboardGallery() {
+    document.body.style.overflow = '';
+    closePinboardModalArtifacts();
   }
   function clearPinboardPhotoRouteChecks() {
     var checkedArticles = document.querySelectorAll('article[data-pinboard-photo-route-checked]');
@@ -1857,6 +1957,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     var stats = calculateBookmarkStats(bookmarks, getTags());
     var overlay = document.createElement('div');
     overlay.id = 'pinboard-stats-overlay';
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "position: fixed; inset: 0; z-index: 10002; background: rgba(0,0,0,0.72); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 18px; font-family: ".concat(LOCAL_FONT_STACK, ";");
     var modal = document.createElement('div');
     modal.style = 'width: min(920px, calc(100vw - 36px)); max-height: calc(100vh - 48px); overflow-y: auto; border-radius: 26px; border: 1px solid #263241; background: radial-gradient(circle at top left, rgba(29,155,240,0.22), transparent 34%), linear-gradient(160deg, #111827 0%, #05070a 78%); color: white; box-shadow: 0 26px 80px rgba(0,0,0,0.72); animation: statsSlideUp 0.24s ease;';
@@ -2016,6 +2117,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
   }
   function showConfirmModal(message, onConfirm) {
     var overlay = document.createElement('div');
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.8); z-index: 10002;\n            display: flex; justify-content: center; align-items: center;\n            font-family: ".concat(LOCAL_FONT_STACK, ";\n        ");
     var modal = document.createElement('div');
     modal.style = "\n            background: #15181c; padding: 25px; border-radius: 16px;\n            width: 350px; max-width: 90%; color: white; border: 1px solid #333;\n            text-align: center;\n        ";
@@ -2056,6 +2158,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
   function showChoiceModal(message, options) {
     return new Promise(function (resolve) {
       var overlay = document.createElement('div');
+      overlay.setAttribute('data-pinboard-overlay', 'true');
       overlay.style = "\n                position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n                background: rgba(0,0,0,0.85); z-index: 10002;\n                display: flex; justify-content: center; align-items: center;\n                animation: fadeIn 0.15s ease;\n                font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;\n            ";
       var modal = document.createElement('div');
       modal.style = "\n                background: linear-gradient(145deg, #15181c 0%, #1a1d21 100%);\n                padding: 0; border-radius: 16px;\n                width: 380px; max-width: 90%; color: white;\n                border: 1px solid #2a2a2a; overflow: hidden;\n                box-shadow: 0 20px 40px rgba(0,0,0,0.4);\n                animation: slideUp 0.2s ease;\n            ";
@@ -2127,6 +2230,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
   // ==================== TAG MANAGEMENT ======================================
   function createTagModal(onSave) {
     var overlay = document.createElement('div');
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.8); z-index: 10001;\n            display: flex; justify-content: center; align-items: center;\n            font-family: ".concat(LOCAL_FONT_STACK, ";\n        ");
     var modal = document.createElement('div');
     modal.style = "\n            background: #15181c; padding: 25px; border-radius: 16px;\n            width: 450px; max-width: 90%; color: white; border: 1px solid #333;\n            position: relative;\n        ";
@@ -2309,6 +2413,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     var choices = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
     return new Promise(function (resolve) {
       var overlay = document.createElement('div');
+      overlay.setAttribute('data-pinboard-overlay', 'true');
       overlay.style = "\n                position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n                background: rgba(0,0,0,0.8); z-index: 10001;\n                display: flex; justify-content: center; align-items: center;\n            ";
       var modal = document.createElement('div');
       modal.style = "\n                background: #15181c; padding: 25px; border-radius: 16px;\n                width: 400px; max-width: 90%; color: white; border: 1px solid #333;\n                text-align: center;\n            ";
@@ -2359,6 +2464,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
   }
   function showTagSelector(bookmark, onUpdate) {
     var overlay = document.createElement('div');
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.8); z-index: 10001;\n            display: flex; justify-content: center; align-items: center;\n        ";
     var modal = document.createElement('div');
     modal.style = "\n            background: #15181c; padding: 25px; border-radius: 16px;\n            width: 350px; max-width: 90%; color: white; border: 1px solid #333;\n        ";
@@ -2424,6 +2530,153 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     };
     document.body.appendChild(overlay);
   }
+  function showQuickTagEditor(bookmarkOrId, onUpdate) {
+    var bookmark = typeof bookmarkOrId === 'object' ? bookmarkOrId : getBookmarkById(bookmarkOrId);
+    if (!bookmark) {
+      showToast('Bookmark não encontrado');
+      return;
+    }
+    var existing = document.getElementById('pinboard-quick-tag-popover');
+    if (existing) existing.remove();
+    var selectedTags = new Set(bookmark.tags || []);
+    var popover = document.createElement('div');
+    popover.id = 'pinboard-quick-tag-popover';
+    popover.style = 'position: fixed; right: 18px; bottom: 88px; z-index: 10005; width: min(360px, calc(100vw - 28px)); max-height: min(520px, calc(100vh - 120px)); overflow-y: auto; background: linear-gradient(145deg, rgba(21,24,28,0.98), rgba(12,18,28,0.98)); color: white; border: 1px solid rgba(29,155,240,0.34); border-radius: 18px; padding: 16px; box-shadow: 0 20px 48px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.04) inset; font-family: ' + LOCAL_FONT_STACK + '; animation: quickTagSlideIn 0.22s ease;';
+    var header = document.createElement('div');
+    header.style = 'display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px;';
+    var titleWrap = document.createElement('div');
+    titleWrap.style = 'display: flex; flex-direction: column; gap: 3px; min-width: 0;';
+    var title = document.createElement('strong');
+    title.innerText = 'Tags rápidas';
+    title.style = 'font-size: 15px; color: #dbeafe; letter-spacing: 0.01em;';
+    var subtitle = document.createElement('span');
+    subtitle.innerText = 'Aplique tags sem abrir a galeria';
+    subtitle.style = 'font-size: 12px; color: #8b98a5;';
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(subtitle);
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = ICON_X;
+    closeBtn.title = 'Fechar';
+    closeBtn.style = 'background: transparent; border: none; color: #8b98a5; width: 30px; height: 30px; border-radius: 9999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;';
+    closeBtn.onmouseenter = function () {
+      closeBtn.style.background = 'rgba(255,255,255,0.08)';
+      closeBtn.style.color = 'white';
+    };
+    closeBtn.onmouseleave = function () {
+      closeBtn.style.background = 'transparent';
+      closeBtn.style.color = '#8b98a5';
+    };
+    closeBtn.onclick = function () {
+      popover.remove();
+    };
+    header.appendChild(titleWrap);
+    header.appendChild(closeBtn);
+    popover.appendChild(header);
+    var chipContainer = document.createElement('div');
+    chipContainer.style = 'display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; max-height: 190px; overflow-y: auto; padding: 2px 0;';
+    var renderChips = function renderChips() {
+      var tags = getTags();
+      chipContainer.innerHTML = '';
+      if (tags.length === 0) {
+        var empty = document.createElement('div');
+        empty.innerText = 'Nenhuma tag criada ainda. Crie a primeira abaixo.';
+        empty.style = 'width: 100%; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.04); color: #8b98a5; font-size: 12px; text-align: center;';
+        chipContainer.appendChild(empty);
+        return;
+      }
+      tags.forEach(function (tag) {
+        var isSelected = selectedTags.has(tag);
+        var chip = document.createElement('button');
+        chip.type = 'button';
+        chip.innerText = tag;
+        chip.style = 'padding: 7px 12px; border-radius: 9999px; border: 1px solid ' + (isSelected ? 'rgba(29,155,240,0.9)' : 'rgba(255,255,255,0.1)') + '; background: ' + (isSelected ? 'rgba(29,155,240,0.95)' : 'rgba(255,255,255,0.055)') + '; color: ' + (isSelected ? 'white' : '#c9d1d9') + '; cursor: pointer; font-size: 12px; font-weight: 700; transition: all 0.16s ease;';
+        chip.onclick = function () {
+          if (selectedTags.has(tag)) {
+            selectedTags.delete(tag);
+          } else {
+            selectedTags.add(tag);
+          }
+          renderChips();
+        };
+        chipContainer.appendChild(chip);
+      });
+    };
+    popover.appendChild(chipContainer);
+    var createRow = document.createElement('div');
+    createRow.style = 'display: flex; gap: 8px; margin-bottom: 12px;';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Nova tag...';
+    input.style = 'flex: 1; min-width: 0; background: rgba(0,0,0,0.36); color: white; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 12px; outline: none; font-family: ' + LOCAL_FONT_STACK + ';';
+    input.onfocus = function () {
+      input.style.borderColor = 'rgba(29,155,240,0.8)';
+      input.style.boxShadow = '0 0 0 3px rgba(29,155,240,0.16)';
+    };
+    input.onblur = function () {
+      input.style.borderColor = 'rgba(255,255,255,0.12)';
+      input.style.boxShadow = 'none';
+    };
+    var createBtn = document.createElement('button');
+    createBtn.type = 'button';
+    createBtn.innerText = 'Criar';
+    createBtn.style = 'background: rgba(29,155,240,0.16); color: #8bd0ff; border: 1px solid rgba(29,155,240,0.42); padding: 10px 12px; border-radius: 12px; cursor: pointer; font-weight: 800; font-family: ' + LOCAL_FONT_STACK + ';';
+    createBtn.onclick = function () {
+      var newTag = addGlobalTagIfNeeded(input.value);
+      if (!newTag) return;
+      selectedTags.add(newTag);
+      input.value = '';
+      renderChips();
+      input.focus();
+    };
+    input.onkeydown = function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      createBtn.click();
+    };
+    createRow.appendChild(input);
+    createRow.appendChild(createBtn);
+    popover.appendChild(createRow);
+    var actions = document.createElement('div');
+    actions.style = 'display: flex; gap: 8px;';
+    var clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.innerText = 'Limpar';
+    clearBtn.style = 'flex: 1; background: rgba(255,255,255,0.06); color: #c9d1d9; border: 1px solid rgba(255,255,255,0.1); padding: 10px; border-radius: 12px; cursor: pointer; font-weight: 700; font-family: ' + LOCAL_FONT_STACK + ';';
+    clearBtn.onclick = function () {
+      selectedTags.clear();
+      renderChips();
+    };
+    var saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.innerText = 'Salvar tags';
+    saveBtn.style = 'flex: 1.35; background: #1d9bf0; color: white; border: none; padding: 10px; border-radius: 12px; cursor: pointer; font-weight: 800; font-family: ' + LOCAL_FONT_STACK + '; box-shadow: 0 8px 20px rgba(29,155,240,0.25);';
+    saveBtn.onclick = function () {
+      var updatedBookmark = saveBookmarkTags(bookmark.id, Array.from(selectedTags));
+      if (!updatedBookmark) {
+        popover.remove();
+        showToast('Bookmark não encontrado');
+        return;
+      }
+      bookmark = updatedBookmark;
+      popover.remove();
+      showToast('Tags atualizadas');
+      if (onUpdate) onUpdate(updatedBookmark);
+    };
+    actions.appendChild(clearBtn);
+    actions.appendChild(saveBtn);
+    popover.appendChild(actions);
+    if (!document.getElementById('pinboard-quick-tag-style')) {
+      var style = document.createElement('style');
+      style.id = 'pinboard-quick-tag-style';
+      style.textContent = '@keyframes quickTagSlideIn { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }';
+      document.head.appendChild(style);
+    }
+    renderChips();
+    document.body.appendChild(popover);
+    setTimeout(function () {
+      input.focus();
+    }, 40);
+  }
 
   // ==================== SETTINGS MODAL ====================
   function SettingsModal(onSave) {
@@ -2432,6 +2685,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     var settings = getSettings();
     var overlay = document.createElement('div');
     overlay.id = 'pinboard-settings-overlay';
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.8); z-index: 10001;\n            display: flex; justify-content: center; align-items: center;\n            font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;\n        ";
     var modal = document.createElement('div');
     modal.style = "\n            background: #15181c; padding: 25px; border-radius: 16px;\n            width: 500px; max-width: 90%; max-height: 85vh; overflow-y: auto;\n            color: white; border: 1px solid #333; position: relative;\n        ";
@@ -3048,6 +3302,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     if (document.getElementById('pinboard-autotag-overlay')) return;
     var overlay = document.createElement('div');
     overlay.id = 'pinboard-autotag-overlay';
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0, 0, 0, 0.85); z-index: 10002;\n            display: flex; justify-content: center; align-items: center;\n            animation: fadeIn 0.2s ease;\n            font-family: ".concat(LOCAL_FONT_STACK, ";\n        ");
 
     // Adicionar animações
@@ -3613,6 +3868,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     if (document.getElementById('pinboard-telegram-routes-overlay')) return;
     var overlay = document.createElement('div');
     overlay.id = 'pinboard-telegram-routes-overlay';
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0, 0, 0, 0.85); z-index: 10002;\n            display: flex; justify-content: center; align-items: center;\n            animation: fadeIn 0.2s ease;\n            font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;\n        ";
     if (!document.getElementById('telegram-routes-styles')) {
       var style = document.createElement('style');
@@ -4066,9 +4322,42 @@ var STORAGE_KEY = 'x_internal_bookmarks';
           return _ref2.apply(this, arguments);
         };
       }());
+      var quickTagBtn = button.cloneNode(true);
+      quickTagBtn.removeAttribute('data-pinboard-injected');
+      quickTagBtn.setAttribute('data-pinboard-quick-tag-injected', 'true');
+      quickTagBtn.setAttribute('data-pinboard-post-url', postUrl || '');
+      quickTagBtn.setAttribute('aria-label', 'Editar Tags do Bookmark');
+      quickTagBtn.title = 'Adicionar/editar tags deste bookmark';
+      quickTagBtn.style.marginRight = IN_POST_ACTION_BUTTON_GAP;
+      applyInPostActionButtonSize(quickTagBtn);
+      var quickTagSvg = quickTagBtn.querySelector('svg');
+      var quickTagIconContainer = quickTagSvg ? quickTagSvg.parentElement : quickTagBtn;
+      if (quickTagIconContainer) {
+        quickTagIconContainer.innerHTML = '<span data-pinboard-quick-tag-icon="true" style="display:inline-flex; align-items:center; justify-content:center; width:' + IN_POST_ACTION_BUTTON_SIZE + '; height:' + IN_POST_ACTION_BUTTON_SIZE + '; color:' + GRAY_COLOR + '; transition: color 0.2s;">' + ICON_TAG.replace('width="16"', 'width="18"').replace('height="16"', 'height="18"') + '</span>';
+      }
+      quickTagBtn.onmouseenter = function () {
+        setQuickTagButtonVisualState(quickTagBtn, postUrl, true);
+      };
+      quickTagBtn.onmouseleave = function () {
+        setQuickTagButtonVisualState(quickTagBtn, postUrl, false);
+      };
+      quickTagBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var savedBookmark = getBookmarkByPostUrl(postUrl);
+        if (!savedBookmark) {
+          showBookmarkToast('Salve o post antes de adicionar tags', false);
+          return;
+        }
+        showQuickTagEditor(savedBookmark, function () {
+          setQuickTagButtonVisualState(quickTagBtn, postUrl, false);
+        });
+      });
       if (!button.parentNode) return;
       var bookmarkButton = button;
       button.parentNode.insertBefore(downloadBtn, button);
+      button.parentNode.insertBefore(quickTagBtn, button);
+      setQuickTagButtonVisualState(quickTagBtn, postUrl, false);
       bookmarkButton.setAttribute('data-pinboard-injected', 'true');
       applyInPostActionButtonSize(bookmarkButton);
       bookmarkButton.style.transition = 'background-color 0.2s, color 0.2s';
@@ -4256,6 +4545,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
                   skipTelegramBackup: skipTelegram
                 });
                 setBookmarkButtonVisualState(bookmarkButton, iconContainer, postUrl, false);
+                updateQuickTagButtonsForPost(postUrl);
 
                 // Toast centralizado estilo X
                 if (result.action === 'added') {
@@ -4270,6 +4560,9 @@ var STORAGE_KEY = 'x_internal_bookmarks';
                       backupBookmarkImages(result.bookmarkId);
                     }
                   }
+                  showQuickTagEditor(result.bookmarkId, function () {
+                    updateQuickTagButtonsForPost(postUrl);
+                  });
                 } else {
                   showBookmarkToast('Removido dos itens salvos');
                 }
@@ -4414,6 +4707,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     }
     var overlay = document.createElement('div');
     overlay.id = 'pinboard-image-viewer';
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = 'position: fixed; inset: 0; z-index: 10006; background: radial-gradient(circle at 50% 20%, rgba(29,155,240,0.12), rgba(0,0,0,0.96) 44%, rgba(0,0,0,0.99)); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: ' + LOCAL_FONT_STACK + '; overflow: hidden;';
     var topBar = document.createElement('div');
     topBar.style = 'position: absolute; top: 18px; left: 20px; right: 20px; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none;';
@@ -4817,11 +5111,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     closeBtn.style = 'background: transparent; color: white; border: none; padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color 0.2s;';
     closeBtn.title = 'Fechar';
     closeBtn.onclick = function () {
-      modal.style.display = 'none';
-      document.body.style.overflow = '';
-      document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"], [id$="-overlay"]').forEach(function (el) {
-        return el.remove();
-      });
+      closePinboardGallery(modal);
     };
     closeBtn.onmouseenter = function () {
       return closeBtn.style.color = '#e74c3c';
@@ -5871,6 +6161,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       }
     });
     var overlay = document.createElement('div');
+    overlay.setAttribute('data-pinboard-overlay', 'true');
     overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.8); z-index: 10001;\n            display: flex; justify-content: center; align-items: center;\n        ";
     var modal = document.createElement('div');
     modal.style = "\n            background: #15181c; padding: 25px; border-radius: 16px;\n            width: 400px; max-width: 90%; color: white; border: 1px solid #333;\n        ";
@@ -5964,6 +6255,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
   function showDetails(bookmark) {
     var _bookmark$images;
     var detailModal = document.createElement('div');
+    detailModal.setAttribute('data-pinboard-overlay', 'true');
     detailModal.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.98); z-index: 10000;\n            display: flex; flex-direction: column; align-items: center;\n            padding: 40px; overflow-y: auto; color: white;\n            font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;\n        ";
     var mergedPreviewObjectUrl = null;
     var showingMerged = false;
@@ -6405,6 +6697,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
               });
             };
             overlay = document.createElement('div');
+            overlay.setAttribute('data-pinboard-overlay', 'true');
             overlay.style = "\n            position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(0,0,0,0.85); z-index: 10001;\n            display: flex; justify-content: center; align-items: center;\n            animation: fadeIn 0.2s ease;\n        ";
             modal = document.createElement('div');
             modal.style = "\n            background: linear-gradient(145deg, #15181c 0%, #1a1d21 100%);\n            padding: 0; border-radius: 20px;\n            width: 650px; max-width: 95%; max-height: 85vh;\n            color: white; border: 1px solid #2a2a2a;\n            position: relative; display: flex; flex-direction: column;\n            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);\n            animation: slideUp 0.3s ease;\n        ";
@@ -7031,11 +7324,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       e.preventDefault();
       e.stopImmediatePropagation();
       if (isGalleryOpen) {
-        gallery.style.display = 'none';
-        document.body.style.overflow = '';
-        document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"], [id$="-overlay"]').forEach(function (el) {
-          return el.remove();
-        });
+        closePinboardGallery(gallery);
       } else {
         createGalleryModal();
       }
@@ -7045,7 +7334,9 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     // Fechar modal ativo (ESC só fecha, nunca abre)
     if (matchesShortcut(e, shortcuts.closeModal)) {
       // Primeiro tenta fechar modais internos (settings, tags, etc)
-      var overlays = document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"]');
+      var overlays = getPinboardModalArtifacts().filter(function (element) {
+        return element.id !== 'pinboard-gallery';
+      });
       if (overlays.length > 0) {
         e.preventDefault();
         overlays[overlays.length - 1].remove();
@@ -7054,11 +7345,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       // Depois fecha a galeria se estiver aberta
       if (isGalleryOpen) {
         e.preventDefault();
-        gallery.style.display = 'none';
-        document.body.style.overflow = '';
-        document.querySelectorAll('[style*="z-index: 10001"], [style*="z-index: 10002"], [id$="-overlay"]').forEach(function (el) {
-          return el.remove();
-        });
+        closePinboardGallery(gallery);
         return;
       }
       // Se nada está aberto, não faz nada

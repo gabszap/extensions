@@ -1,6 +1,6 @@
 # Pinboard
 
-![Version](https://img.shields.io/badge/version-2.8.0-2ea44f)
+![Version](https://img.shields.io/badge/version-2.8.1-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 ![Type](https://img.shields.io/badge/type-userscript-1f6feb)
 ![Browsers](https://img.shields.io/badge/browsers-Chromium%20%7C%20Firefox-6f42c1)
@@ -30,6 +30,7 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 - **Replaces the Grok button** on every tweet with a bookmark toggle.
 - **Saves locally** via `GM_setValue` — post URL, images (max 4096x4096), tags, timestamps, post date, username, and avatar.
 - **Center toast** on bookmark add/remove mimicking X's native style, with a "Ver galeria" shortcut.
+- **Quick tagging after save** — immediately add existing tags or create a new tag from the post/page without opening the gallery.
 
 ### Gallery
 
@@ -47,6 +48,7 @@ A userscript that replaces X/Twitter's Grok button with a local bookmark system.
 - Full CRUD — create, delete, drag-and-drop reorder.
 - Tag chips displayed on bookmarks.
 - Tag-based filtering in the gallery.
+- Post-level quick tag editor for newly saved or already saved bookmarks.
 - Bulk tag management for multiple selected bookmarks.
 
 ### Image handling

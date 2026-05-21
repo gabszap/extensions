@@ -1,6 +1,6 @@
 # Age Bypass for Twitter — Bypass Age-Restricted Media
 
-![Version](https://img.shields.io/badge/version-1.1.0-2ea44f)
+![Version](https://img.shields.io/badge/version-1.1.2-2ea44f)
 ![Platform](https://img.shields.io/badge/platform-X%20%2F%20Twitter-000000)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -22,11 +22,12 @@ Uses the [fxTwitter API](https://github.com/FxEmbed/FxEmbed) to fetch the origin
 - **Lightbox viewer** — full-screen overlay with:
   - Fade transitions
   - Keyboard navigation (left/right arrows to browse, Esc to close)
-  - Open images in new tab on click
+  - Image zoom controls, percentage display, wheel zoom, click-to-zoom toggle, and drag-to-pan while zoomed
+  - Open original image from the viewer toolbar
 - **Video support** — videos with native `<video>` controls (play/pause, volume, fullscreen)
 - **Multi-language** — detects Portuguese ("Mostrar"), English ("Show"), Spanish, and French age restriction indicators
 - **API caching** — responses are cached for 30 minutes to avoid redundant API calls
-- **Compatible** — works alongside other X userscripts (Pinboard, etc.)
+- **Compatible** — revealed media uses native-like media markers and emits a lightweight `pinboard:media-revealed` / `fx-reveal:media-revealed` event so companion scripts such as Pinboard can rescan posts after reveal
 
 ## Configuration
 
@@ -51,10 +52,10 @@ Settings are available via your userscript manager's menu:
 3. Media is fetched via fxTwitter and displayed inline
 4. Click any image/video to open in the lightbox viewer
 5. Navigate with arrow keys or on-screen prev/next buttons
+6. For images, use the zoom toolbar, mouse wheel, click-to-zoom, or drag while zoomed
 
 ## Notes
 
 - The fxTwitter API fetches media asynchronously — reveal time depends on the API response
 - Only the age-restricted overlay is replaced; the rest of the tweet is preserved
 - 1080p GIFs are converted to animated WebM/MP4, displayed as videos with controls
-

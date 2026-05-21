@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Age Bypass for Twitter
 // @namespace    Age Bypass for Twitter
-// @version      1.1.0
-// @description  Adds a reveal button (eye icon) to bypass X/Twitter age-restricted media via the fxTwitter API. Features grid layout and lightbox viewer.
+// @version      1.1.2
+// @description  Adds a reveal button (eye icon) to bypass X/Twitter age-restricted media via the fxTwitter API. Features grid layout and zoomable lightbox viewer.
 // @author       gabszap
 // @match        https://twitter.com/*
 // @match        https://x.com/*
@@ -18,6 +18,8 @@
   "use strict";
 
   var FX_API = "https://api.fxtwitter.com/";
+  var LOCAL_FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif";
+  var ICON_EXTERNAL_LINK = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"vertical-align: middle;\"><path d=\"M15 3h6v6\"/><path d=\"M10 14 21 3\"/><path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/></svg>";
 
   var VERSION = (typeof GM_info !== "undefined" && GM_info && GM_info.script && GM_info.script.version) || "unknown";
 
@@ -147,11 +149,111 @@
   var overlayClose = null;
   var overlayPrev = null;
   var overlayNext = null;
+  var overlayZoomControls = null;
+  var overlayZoomPercent = null;
+  var overlayZoomIn = null;
+  var overlayZoomOut = null;
+  var overlayZoomReset = null;
+  var overlayOpenOriginal = null;
   var overlayMedia = null;
   var overlayIndex = 0;
+  var overlayZoom = 1;
+  var overlayPanX = 0;
+  var overlayPanY = 0;
+  var overlayIsDragging = false;
+  var overlayDragStartX = 0;
+  var overlayDragStartY = 0;
+  var overlayDragOriginX = 0;
+  var overlayDragOriginY = 0;
+  var overlayDragMoved = false;
+
+  function getOverlayImageSource() {
+    if (overlayImg && overlayImg.src && overlayImg.src.indexOf("data:") !== 0) return overlayImg.src;
+    if (overlayMedia && overlayMedia[overlayIndex]) return overlayMedia[overlayIndex].url;
+    return "";
+  }
+
+  function updateOverlayZoomDisplay() {
+    if (!overlayZoomPercent) return;
+    overlayZoomPercent.textContent = Math.round(overlayZoom * 100) + "%";
+  }
+
+  function applyOverlayZoom() {
+    if (!overlayImg) return;
+    overlayImg.style.transform =
+      "translate(" + overlayPanX + "px, " + overlayPanY + "px) scale(" + overlayZoom + ")";
+    overlayImg.style.cursor = overlayZoom > 1 ? "grab" : "zoom-in";
+    updateOverlayZoomDisplay();
+  }
+
+  function setOverlayZoom(nextZoom) {
+    overlayZoom = Math.max(0.5, Math.min(nextZoom, 6));
+    if (overlayZoom <= 1) {
+      overlayPanX = 0;
+      overlayPanY = 0;
+    }
+    applyOverlayZoom();
+  }
+
+  function resetOverlayZoom() {
+    overlayZoom = 1;
+    overlayPanX = 0;
+    overlayPanY = 0;
+    overlayIsDragging = false;
+    overlayDragMoved = false;
+    applyOverlayZoom();
+  }
+
+  function setOverlayZoomControlsVisible(isVisible) {
+    if (!overlayZoomControls) return;
+    overlayZoomControls.style.display = isVisible ? "flex" : "none";
+  }
+
+  function createOverlayControlButton(label, title) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.innerHTML = label;
+    button.title = title;
+    button.style.cssText = [
+      "min-width:34px",
+      "height:34px",
+      "border:none",
+      "border-radius:999px",
+      "font-family:" + LOCAL_FONT_STACK,
+      "background:transparent",
+      "color:#fff",
+      "cursor:pointer",
+      "font-size:14px",
+      "font-weight:700",
+      "display:inline-flex",
+      "align-items:center",
+      "justify-content:center",
+      "transition:background 0.15s, color 0.15s",
+    ].join(";");
+    button.addEventListener("mouseenter", function () {
+      button.style.background = "rgba(29,155,240,0.24)";
+      button.style.color = "#8bd0ff";
+    });
+    button.addEventListener("mouseleave", function () {
+      button.style.background = "transparent";
+      button.style.color = "#fff";
+    });
+    return button;
+  }
 
   function createOverlay() {
-    if (overlayEl) return;
+    if (overlayEl && document.body.contains(overlayEl)) return;
+    overlayEl = null;
+    overlayImg = null;
+    overlayVideo = null;
+    overlayPrev = null;
+    overlayNext = null;
+    overlayZoomControls = null;
+    overlayZoomPercent = null;
+    overlayZoomIn = null;
+    overlayZoomOut = null;
+    overlayZoomReset = null;
+    overlayOpenOriginal = null;
 
     overlayEl = document.createElement("div");
     overlayEl.id = "fx-reveal-overlay";
@@ -168,7 +270,9 @@
       "align-items:center",
       "cursor:pointer",
       "user-select:none",
+      "overflow:hidden",
       "opacity:0",
+      "font-family:" + LOCAL_FONT_STACK,
       "transition:opacity 0.2s ease",
     ].join(";");
 
@@ -181,8 +285,12 @@
       "cursor:zoom-in",
       "position:relative",
       "z-index:2",
+      "user-select:none",
+      "transform-origin:center center",
+      "transition:transform 0.12s ease-out",
       "box-shadow:0 4px 40px rgba(0,0,0,0.5)",
     ].join(";");
+    overlayImg.draggable = false;
 
     overlayVideo = document.createElement("video");
     overlayVideo.style.cssText = [
@@ -198,6 +306,53 @@
     overlayVideo.controls = true;
     overlayVideo.preload = "metadata";
 
+    overlayZoomControls = document.createElement("div");
+    overlayZoomControls.style.cssText = [
+      "position:fixed",
+      "top:12px",
+      "left:50%",
+      "transform:translateX(-50%)",
+      "z-index:3",
+      "display:none",
+      "align-items:center",
+      "gap:6px",
+      "background:rgba(15,20,25,0.78)",
+      "border:1px solid rgba(255,255,255,0.14)",
+      "border-radius:999px",
+      "padding:6px",
+      "box-shadow:0 12px 30px rgba(0,0,0,0.35)",
+      "font-family:" + LOCAL_FONT_STACK,
+      "pointer-events:auto",
+    ].join(";");
+
+    overlayZoomPercent = document.createElement("span");
+    overlayZoomPercent.style.cssText = [
+      "min-width:50px",
+      "height:30px",
+      "border-radius:999px",
+      "background:rgba(255,255,255,0.08)",
+      "color:#d7e7f7",
+      "display:inline-flex",
+      "align-items:center",
+      "justify-content:center",
+      "font-size:12px",
+      "font-weight:800",
+      "font-family:" + LOCAL_FONT_STACK,
+      "letter-spacing:0.02em",
+    ].join(";");
+
+    overlayZoomOut = createOverlayControlButton("&#8722;", "Zoom out");
+    overlayZoomIn = createOverlayControlButton("+", "Zoom in");
+    overlayZoomReset = createOverlayControlButton("Fit", "Fit to screen");
+    overlayZoomReset.style.minWidth = "44px";
+    overlayOpenOriginal = createOverlayControlButton(ICON_EXTERNAL_LINK, "Open original");
+
+    overlayZoomControls.appendChild(overlayZoomPercent);
+    overlayZoomControls.appendChild(overlayZoomOut);
+    overlayZoomControls.appendChild(overlayZoomIn);
+    overlayZoomControls.appendChild(overlayZoomReset);
+    overlayZoomControls.appendChild(overlayOpenOriginal);
+
     overlayPrev = document.createElement("button");
     overlayPrev.innerHTML = "&#10094;";
     overlayPrev.style.cssText = [
@@ -211,6 +366,7 @@
       "border-radius:999px",
       "width:44px",
       "height:44px",
+      "font-family:" + LOCAL_FONT_STACK,
       "font-size:20px",
       "cursor:pointer",
       "z-index:3",
@@ -239,6 +395,7 @@
       "border-radius:999px",
       "width:44px",
       "height:44px",
+      "font-family:" + LOCAL_FONT_STACK,
       "font-size:20px",
       "cursor:pointer",
       "z-index:3",
@@ -266,6 +423,7 @@
       "border-radius:999px",
       "width:40px",
       "height:40px",
+      "font-family:" + LOCAL_FONT_STACK,
       "font-size:18px",
       "cursor:pointer",
       "z-index:3",
@@ -285,6 +443,7 @@
     overlayEl.appendChild(overlayNext);
     overlayEl.appendChild(overlayImg);
     overlayEl.appendChild(overlayVideo);
+    overlayEl.appendChild(overlayZoomControls);
     overlayEl.appendChild(closeBtn);
     document.body.appendChild(overlayEl);
 
@@ -293,13 +452,59 @@
         hideOverlay();
       }
     });
-    overlayImg.addEventListener("click", function () {
-      if (overlayImg.src && overlayImg.src.indexOf("data:") !== 0) {
-        window.open(overlayImg.src, "_blank");
-      } else if (overlayMedia && overlayMedia[overlayIndex]) {
-        window.open(overlayMedia[overlayIndex].url, "_blank");
+    overlayImg.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (overlayDragMoved) {
+        overlayDragMoved = false;
+        return;
+      }
+      if (overlayZoom > 1) {
+        resetOverlayZoom();
+        return;
+      }
+      setOverlayZoom(2);
+    });
+    overlayImg.addEventListener("mousedown", function (e) {
+      if (overlayZoom <= 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      overlayIsDragging = true;
+      overlayDragMoved = false;
+      overlayDragStartX = e.clientX;
+      overlayDragStartY = e.clientY;
+      overlayDragOriginX = overlayPanX;
+      overlayDragOriginY = overlayPanY;
+      overlayImg.style.cursor = "grabbing";
+    });
+    overlayEl.addEventListener("mousemove", function (e) {
+      if (!overlayIsDragging) return;
+      if (Math.abs(e.clientX - overlayDragStartX) > 3 || Math.abs(e.clientY - overlayDragStartY) > 3) {
+        overlayDragMoved = true;
+      }
+      overlayPanX = overlayDragOriginX + e.clientX - overlayDragStartX;
+      overlayPanY = overlayDragOriginY + e.clientY - overlayDragStartY;
+      applyOverlayZoom();
+    });
+    overlayEl.addEventListener("mouseup", function () {
+      if (!overlayIsDragging) return;
+      overlayIsDragging = false;
+      overlayImg.style.cursor = overlayZoom > 1 ? "grab" : "zoom-in";
+      if (overlayDragMoved) {
+        setTimeout(function () {
+          overlayDragMoved = false;
+        }, 0);
       }
     });
+    overlayEl.addEventListener("mouseleave", function () {
+      if (!overlayIsDragging) return;
+      overlayIsDragging = false;
+      overlayImg.style.cursor = overlayZoom > 1 ? "grab" : "zoom-in";
+    });
+    overlayEl.addEventListener("wheel", function (e) {
+      if (!overlayImg || overlayImg.style.display === "none") return;
+      e.preventDefault();
+      setOverlayZoom(overlayZoom + (e.deltaY < 0 ? 0.18 : -0.18));
+    }, { passive: false });
     overlayPrev.addEventListener("click", function (e) {
       e.stopPropagation();
       navigateOverlay(-1);
@@ -312,6 +517,26 @@
       e.stopPropagation();
       hideOverlay();
     });
+    overlayZoomControls.addEventListener("click", function (e) {
+      e.stopPropagation();
+    });
+    overlayZoomOut.addEventListener("click", function (e) {
+      e.stopPropagation();
+      setOverlayZoom(overlayZoom - 0.25);
+    });
+    overlayZoomIn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      setOverlayZoom(overlayZoom + 0.25);
+    });
+    overlayZoomReset.addEventListener("click", function (e) {
+      e.stopPropagation();
+      resetOverlayZoom();
+    });
+    overlayOpenOriginal.addEventListener("click", function (e) {
+      var src = getOverlayImageSource();
+      e.stopPropagation();
+      if (src) window.open(src, "_blank");
+    });
 
     document.addEventListener("keydown", function (e) {
       if (overlayEl && overlayEl.style.display !== "none") {
@@ -321,6 +546,21 @@
           navigateOverlay(-1);
         } else if (e.key === "ArrowRight") {
           navigateOverlay(1);
+        } else if (e.key === "+" || e.key === "=") {
+          if (overlayImg && overlayImg.style.display !== "none") {
+            e.preventDefault();
+            setOverlayZoom(overlayZoom + 0.25);
+          }
+        } else if (e.key === "-") {
+          if (overlayImg && overlayImg.style.display !== "none") {
+            e.preventDefault();
+            setOverlayZoom(overlayZoom - 0.25);
+          }
+        } else if (e.key === "0") {
+          if (overlayImg && overlayImg.style.display !== "none") {
+            e.preventDefault();
+            resetOverlayZoom();
+          }
         }
       }
     });
@@ -333,10 +573,12 @@
 
     var item = mediaAll[index];
     var isVideo = item.type === "video" || item.type === "animated_gif";
+    resetOverlayZoom();
 
     if (isVideo) {
       overlayImg.style.display = "none";
       overlayVideo.style.display = "block";
+      setOverlayZoomControlsVisible(false);
 
       var videoSrc = (item.video && item.video.urls && item.video.urls[0]) || item.url || "";
       logVerbose("Video source:", videoSrc);
@@ -354,6 +596,7 @@
       overlayVideo.poster = "";
       overlayImg.style.display = "block";
       overlayImg.src = item.url;
+      setOverlayZoomControlsVisible(true);
     }
 
     overlayEl.style.display = "flex";
@@ -367,6 +610,7 @@
   }
 
   function hideOverlay() {
+    resetOverlayZoom();
     overlayImg.src = "";
     overlayVideo.pause();
     overlayVideo.src = "";
@@ -594,6 +838,72 @@
         logVerbose("Removed filter from ancestor:", ancestor.tagName);
       }
       ancestor = ancestor.parentElement;
+    }
+  }
+
+  function isVideoMediaItem(item) {
+    if (!item) return false;
+    return item.type === "video" || item.type === "animated_gif";
+  }
+
+  function getVideoMediaSource(item) {
+    if (!item) return "";
+    if (item.video && item.video.urls && item.video.urls[0]) return item.video.urls[0];
+    return item.url || "";
+  }
+
+  function markRevealedMediaForPinboard(wrapper, item) {
+    if (!wrapper || !item) return;
+
+    wrapper.setAttribute("data-fx-revealed-media", "1");
+    wrapper.setAttribute("data-testid", isVideoMediaItem(item) ? "videoPlayer" : "tweetPhoto");
+
+    if (isVideoMediaItem(item)) {
+      wrapper.setAttribute("data-fx-media-type", "video");
+      return;
+    }
+
+    wrapper.setAttribute("data-fx-media-type", "photo");
+  }
+
+  function createPinboardVideoMarker(item) {
+    var marker = document.createElement("video");
+    var source = getVideoMediaSource(item);
+
+    marker.setAttribute("data-fx-pinboard-marker", "1");
+    marker.preload = "metadata";
+    marker.muted = true;
+    marker.src = source;
+    marker.poster = item && item.thumbnail_url ? item.thumbnail_url : "";
+    marker.style.cssText = [
+      "position:absolute",
+      "width:1px",
+      "height:1px",
+      "opacity:0",
+      "pointer-events:none",
+      "left:0",
+      "top:0",
+    ].join(";");
+
+    return marker;
+  }
+
+  function notifyPinboardMediaRevealed(container, mediaAll, tweetNode) {
+    if (!container || !mediaAll || mediaAll.length === 0) return;
+
+    // Pinboard listens through normal DOM mutations today; this namespaced event is
+    // a lightweight integration hook for media rescans without depending on Pinboard internals.
+    var detail = {
+      container: container,
+      article: tweetNode || container.closest("article"),
+      mediaCount: mediaAll.length,
+    };
+
+    try {
+      container.dispatchEvent(new CustomEvent("pinboard:media-revealed", { bubbles: true, detail: detail }));
+      container.dispatchEvent(new CustomEvent("fx-reveal:media-revealed", { bubbles: true, detail: detail }));
+    } catch (err) {
+      logVerbose("Media reveal event dispatch failed:", err);
     }
   }
 
@@ -830,6 +1140,7 @@
         "border:1px solid rgb(47,51,54)",
         "position:relative",
       ].join(";");
+      markRevealedMediaForPinboard(mediaWrapper, singleItem);
 
       var singleImg = makeGridImage(mediaAll, 0, !!isSingleVideo);
       if (isSingleVideo) {
@@ -891,6 +1202,7 @@
       leftCell.style.cssText = "display:flex;width:100%;height:100%;overflow:hidden;cursor:pointer;position:relative";
       leftCell.style.gridRow = "1 / -1";
       leftCell.style.gridColumn = "1 / 2";
+      markRevealedMediaForPinboard(leftCell, mediaAll[0]);
 
       var leftImg = document.createElement("img");
       leftImg.src = leftUrl;
@@ -961,6 +1273,7 @@
     }
 
     logVerbose("Grid layout applied, images:", count);
+    notifyPinboardMediaRevealed(container, mediaAll, tweetNode);
   }
 
   function makeGridImage(mediaAll, index, square) {
@@ -980,11 +1293,13 @@
       "cursor:pointer",
       "position:relative",
     ].join(";");
+    markRevealedMediaForPinboard(containerDiv, mediaAll[index]);
 
     if (isVideo && urlIsVideo) {
       containerDiv.style.background = "#1a1a2e";
       containerDiv.style.justifyContent = "center";
       containerDiv.style.alignItems = "center";
+      containerDiv.appendChild(createPinboardVideoMarker(mediaAll[index]));
     } else {
       var img = document.createElement("img");
       img.src = mediaUrl;

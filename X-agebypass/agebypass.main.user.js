@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Age Bypass for Twitter
 // @namespace    Age Bypass for Twitter
-// @version      1.1.2
+// @version      1.1.3
 // @description  Adds a reveal button (eye icon) to bypass X/Twitter age-restricted media via the fxTwitter API. Features grid layout and zoomable lightbox viewer.
 // @author       gabszap
 // @match        https://twitter.com/*
@@ -20,6 +20,7 @@
   var FX_API = "https://api.fxtwitter.com/";
   var LOCAL_FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif";
   var ICON_EXTERNAL_LINK = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"vertical-align: middle;\"><path d=\"M15 3h6v6\"/><path d=\"M10 14 21 3\"/><path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/></svg>";
+  var ICON_DOWNLOAD = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"vertical-align: middle;\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" x2=\"12\" y1=\"15\" y2=\"3\"/></svg>";
 
   var VERSION = (typeof GM_info !== "undefined" && GM_info && GM_info.script && GM_info.script.version) || "unknown";
 
@@ -155,6 +156,7 @@
   var overlayZoomOut = null;
   var overlayZoomReset = null;
   var overlayOpenOriginal = null;
+  var overlayDownload = null;
   var overlayMedia = null;
   var overlayIndex = 0;
   var overlayZoom = 1;
@@ -254,6 +256,7 @@
     overlayZoomOut = null;
     overlayZoomReset = null;
     overlayOpenOriginal = null;
+    overlayDownload = null;
 
     overlayEl = document.createElement("div");
     overlayEl.id = "fx-reveal-overlay";
@@ -346,12 +349,14 @@
     overlayZoomReset = createOverlayControlButton("Fit", "Fit to screen");
     overlayZoomReset.style.minWidth = "44px";
     overlayOpenOriginal = createOverlayControlButton(ICON_EXTERNAL_LINK, "Open original");
+    overlayDownload = createOverlayControlButton(ICON_DOWNLOAD, "Download media");
 
     overlayZoomControls.appendChild(overlayZoomPercent);
     overlayZoomControls.appendChild(overlayZoomOut);
     overlayZoomControls.appendChild(overlayZoomIn);
     overlayZoomControls.appendChild(overlayZoomReset);
     overlayZoomControls.appendChild(overlayOpenOriginal);
+    overlayZoomControls.appendChild(overlayDownload);
 
     overlayPrev = document.createElement("button");
     overlayPrev.innerHTML = "&#10094;";
@@ -536,6 +541,77 @@
       var src = getOverlayImageSource();
       e.stopPropagation();
       if (src) window.open(src, "_blank");
+    });
+    overlayDownload.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var src = "";
+      var isVideo = false;
+      var item = overlayMedia && overlayMedia[overlayIndex];
+      if (item) {
+        isVideo = item.type === "video" || item.type === "animated_gif";
+        if (isVideo) {
+          src = (item.video && item.video.urls && item.video.urls[0]) || item.url || "";
+        } else {
+          src = item.url || getOverlayImageSource();
+        }
+      } else {
+        src = getOverlayImageSource();
+      }
+
+      if (!src) return;
+
+      var filename = "x_media";
+      try {
+        var urlObj = new URL(src);
+        var pathname = urlObj.pathname;
+        var parts = pathname.split("/");
+        var lastPart = parts[parts.length - 1];
+        if (lastPart) {
+          filename = lastPart.split("?")[0].split(":")[0] || "x_media";
+        }
+        var format = urlObj.searchParams.get("format");
+        if (format) {
+          if (!filename.endsWith("." + format)) {
+            filename += "." + format;
+          }
+        } else if (!filename.includes(".")) {
+          filename += isVideo ? ".mp4" : ".jpg";
+        }
+      } catch (err) {
+        // Fallback
+      }
+
+      var originalHTML = overlayDownload.innerHTML;
+      overlayDownload.innerHTML = "...";
+      overlayDownload.style.pointerEvents = "none";
+
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: src,
+        responseType: "blob",
+        onload: function (response) {
+          overlayDownload.innerHTML = originalHTML;
+          overlayDownload.style.pointerEvents = "auto";
+          if (response.status === 200) {
+            var blob = response.response;
+            var blobUrl = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+          } else {
+            alert("Erro ao realizar o download (Status: " + response.status + ")");
+          }
+        },
+        onerror: function (err) {
+          overlayDownload.innerHTML = originalHTML;
+          overlayDownload.style.pointerEvents = "auto";
+          alert("Erro na conexão ao baixar a mídia.");
+        }
+      });
     });
 
     document.addEventListener("keydown", function (e) {

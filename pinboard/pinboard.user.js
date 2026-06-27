@@ -9,7 +9,7 @@
 // @grant       GM_download
 // @connect     api.telegram.org
 // @connect     api.vxtwitter.com
-// @version     2.8.1
+// @version     2.8.2
 // @author      gabszap
 // @description Adds an internal bookmark system and tags to X, replacing the Grok button.
 // ==/UserScript==
@@ -72,6 +72,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
   var ICON_CHECK = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg>";
   var ICON_PALETTE = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\"/><path d=\"M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z\"/></svg>";
   var ICON_REFRESH = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"vertical-align: middle;\"><path d=\"M20 11a8.1 8.1 0 0 0-15.5-2.6\"/><path d=\"M4 5v4h4\"/><path d=\"M4 13a8.1 8.1 0 0 0 15.5 2.6\"/><path d=\"M20 19v-4h-4\"/></svg>";
+  var ICON_FULLSCREEN = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><rect width=\"10\" height=\"8\" x=\"7\" y=\"8\" rx=\"1\"/></svg>";
   var BLUE_COLOR = 'rgb(29, 155, 240)';
   var GRAY_COLOR = 'rgb(113, 118, 123)';
   var IN_POST_ACTION_BUTTON_SIZE = '32px';
@@ -100,7 +101,8 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     telegramUploadMode: 'document',
     telegramFilterTags: [],
     collapsedSections: [],
-    debugMode: false
+    debugMode: false,
+    downloadAsZip: false
   };
 
   // Estado da galeria
@@ -1323,6 +1325,460 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       }
     });
   }
+  function showImageSelectModal(images, handle, postId, onDownloadSelected) {
+    var existing = document.getElementById('pinboard-img-select-modal');
+    if (existing) existing.remove();
+
+    var modal = document.createElement('div');
+    modal.id = 'pinboard-img-select-modal';
+    modal.style.cssText = [
+      "position:fixed",
+      "top:0",
+      "left:0",
+      "width:100vw",
+      "height:100vh",
+      "background:rgba(0, 0, 0, 0.75)",
+      "backdrop-filter:blur(4px)",
+      "z-index:1000000",
+      "display:flex",
+      "justify-content:center",
+      "align-items:center",
+      "font-family:" + LOCAL_FONT_STACK,
+      "user-select:none"
+    ].join(";");
+
+    var content = document.createElement('div');
+    content.style.cssText = [
+      "background:#15181c",
+      "border:1px solid #2f3336",
+      "border-radius:16px",
+      "width:90%",
+      "max-width:480px",
+      "padding:20px",
+      "box-shadow:0 8px 32px rgba(0, 0, 0, 0.5)",
+      "display:flex",
+      "flex-direction:column",
+      "gap:16px",
+      "animation:pinboardModalFade 0.2s ease-out"
+    ].join(";");
+
+    if (!document.getElementById('pinboard-modal-anim-style')) {
+      var style = document.createElement('style');
+      style.id = 'pinboard-modal-anim-style';
+      style.textContent = "@keyframes pinboardModalFade { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }";
+      document.head.appendChild(style);
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = "display:flex; justify-content:space-between; align-items:center;";
+    
+    var title = document.createElement('h3');
+    title.innerText = 'Selecionar Mídias para Baixar';
+    title.style.cssText = "margin:0; color:#fff; font-size:16px; font-weight:700;";
+    
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = "&#10005;";
+    closeBtn.style.cssText = "background:transparent; border:none; color:#888; font-size:16px; cursor:pointer; padding:4px; transition:color 0.2s;";
+    closeBtn.onmouseenter = function() { closeBtn.style.color = '#fff'; };
+    closeBtn.onmouseleave = function() { closeBtn.style.color = '#888'; };
+    closeBtn.onclick = function() { modal.remove(); };
+    
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    content.appendChild(header);
+
+    var grid = document.createElement('div');
+    grid.style.cssText = [
+      "display:grid",
+      "grid-template-columns:repeat(2, 1fr)",
+      "gap:12px",
+      "max-height:320px",
+      "overflow-y:auto",
+      "padding:4px"
+    ].join(";");
+
+    var selectedUrls = new Set(images);
+
+    images.forEach(function(url, idx) {
+      var itemWrapper = document.createElement('div');
+      itemWrapper.style.cssText = [
+        "position:relative",
+        "aspect-ratio:16/9",
+        "border-radius:8px",
+        "border:2px solid #22c55e",
+        "overflow:hidden",
+        "cursor:pointer",
+        "background:#000",
+        "transition:border-color 0.2s"
+      ].join(";");
+
+      var isVideo = url.includes('.mp4') || url.includes('video.twimg.com');
+      var thumbUrl = url;
+      if (!isVideo && url.includes('pbs.twimg.com/media/')) {
+        thumbUrl = url.replace(/name=[^&]+/, 'name=small');
+      }
+
+      var mediaElement;
+      if (isVideo) {
+        mediaElement = document.createElement('video');
+        mediaElement.src = url;
+        mediaElement.muted = true;
+        mediaElement.currentTime = 0.5;
+        mediaElement.style.cssText = "width:100%; height:100%; object-fit:cover;";
+      } else {
+        mediaElement = document.createElement('img');
+        mediaElement.src = thumbUrl;
+        mediaElement.style.cssText = "width:100%; height:100%; object-fit:cover;";
+      }
+
+      var checkboxContainer = document.createElement('div');
+      checkboxContainer.style.cssText = [
+        "position:absolute",
+        "top:6px",
+        "left:6px",
+        "width:20px",
+        "height:20px",
+        "border-radius:50%",
+        "background:#22c55e",
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "color:white",
+        "font-size:11px",
+        "font-weight:bold",
+        "box-shadow:0 2px 4px rgba(0,0,0,0.5)",
+        "transition:background 0.2s, border 0.2s"
+      ].join(";");
+      checkboxContainer.innerHTML = '✓';
+
+      itemWrapper.appendChild(mediaElement);
+      itemWrapper.appendChild(checkboxContainer);
+
+      itemWrapper.onclick = function() {
+        if (selectedUrls.has(url)) {
+          selectedUrls.delete(url);
+          itemWrapper.style.borderColor = '#2f3336';
+          checkboxContainer.style.background = 'rgba(0,0,0,0.6)';
+          checkboxContainer.style.border = '1px solid #888';
+          checkboxContainer.innerHTML = '';
+        } else {
+          selectedUrls.add(url);
+          itemWrapper.style.borderColor = '#22c55e';
+          checkboxContainer.style.background = '#22c55e';
+          checkboxContainer.style.border = 'none';
+          checkboxContainer.innerHTML = '✓';
+        }
+      };
+
+      grid.appendChild(itemWrapper);
+    });
+
+    content.appendChild(grid);
+
+    var footer = document.createElement('div');
+    footer.style.cssText = "display:flex; gap:12px; justify-content:flex-end; align-items:center; margin-top:8px;";
+
+    var selectAllBtn = document.createElement('button');
+    selectAllBtn.innerText = 'Desmarcar Todos';
+    selectAllBtn.style.cssText = [
+      "background:transparent",
+      "border:1px solid #536471",
+      "color:#eff3f4",
+      "padding:8px 16px",
+      "border-radius:999px",
+      "font-weight:700",
+      "font-size:13px",
+      "cursor:pointer",
+      "transition:background 0.2s"
+    ].join(";");
+    selectAllBtn.onmouseenter = function() { selectAllBtn.style.background = 'rgba(255,255,255,0.08)'; };
+    selectAllBtn.onmouseleave = function() { selectAllBtn.style.background = 'transparent'; };
+    
+    var isAllSelected = true;
+    selectAllBtn.onclick = function() {
+      if (isAllSelected) {
+        selectedUrls.clear();
+        Array.from(grid.children).forEach(function(itemWrapper) {
+          itemWrapper.style.borderColor = '#2f3336';
+          var checkboxContainer = itemWrapper.querySelector('div');
+          checkboxContainer.style.background = 'rgba(0,0,0,0.6)';
+          checkboxContainer.style.border = '1px solid #888';
+          checkboxContainer.innerHTML = '';
+        });
+        selectAllBtn.innerText = 'Selecionar Todos';
+        isAllSelected = false;
+      } else {
+        images.forEach(function(url) { selectedUrls.add(url); });
+        Array.from(grid.children).forEach(function(itemWrapper) {
+          itemWrapper.style.borderColor = '#22c55e';
+          var checkboxContainer = itemWrapper.querySelector('div');
+          checkboxContainer.style.background = '#22c55e';
+          checkboxContainer.style.border = 'none';
+          checkboxContainer.innerHTML = '✓';
+        });
+        selectAllBtn.innerText = 'Desmarcar Todos';
+        isAllSelected = true;
+      }
+    };
+
+    var downloadBtn = document.createElement('button');
+    downloadBtn.innerText = 'Baixar Mídias';
+    downloadBtn.style.cssText = [
+      "background:#22c55e",
+      "border:none",
+      "color:white",
+      "padding:8px 20px",
+      "border-radius:999px",
+      "font-weight:700",
+      "font-size:13px",
+      "cursor:pointer",
+      "transition:background 0.2s"
+    ].join(";");
+    downloadBtn.onmouseenter = function() { downloadBtn.style.background = '#1a9f4c'; };
+    downloadBtn.onmouseleave = function() { downloadBtn.style.background = '#22c55e'; };
+    downloadBtn.onclick = function() {
+      if (selectedUrls.size === 0) {
+        alert('Nenhuma imagem selecionada.');
+        return;
+      }
+      onDownloadSelected(Array.from(selectedUrls));
+      modal.remove();
+    };
+
+    footer.appendChild(selectAllBtn);
+    footer.appendChild(downloadBtn);
+    content.appendChild(footer);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+  }
+  // --- Criador de ZIP inline (sem dependência externa) ---
+  function crc32(data) {
+    var table = new Uint32Array(256);
+    for (var i = 0; i < 256; i++) {
+      var c = i;
+      for (var j = 0; j < 8; j++) {
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[i] = c >>> 0;
+    }
+    var crc = 0xFFFFFFFF;
+    for (var k = 0; k < data.length; k++) {
+      crc = table[(crc ^ data[k]) & 0xFF] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function createZipBlob(files) {
+    // files = [{name: string, data: Uint8Array}, ...]
+    // ZIP com método STORE (sem compressão) — ideal para imagens já comprimidas
+    var parts = [];
+    var centralParts = [];
+    var offset = 0;
+    var encoder = new TextEncoder();
+
+    for (var i = 0; i < files.length; i++) {
+      var nameBytes = encoder.encode(files[i].name);
+      var fileData = files[i].data;
+      var fileCrc = crc32(fileData);
+      var size = fileData.length;
+
+      // Local file header (30 bytes + nome)
+      var local = new ArrayBuffer(30 + nameBytes.length);
+      var lv = new DataView(local);
+      lv.setUint32(0, 0x04034b50, true);       // assinatura
+      lv.setUint16(4, 20, true);                // versão necessária
+      lv.setUint16(6, 0, true);                 // flags
+      lv.setUint16(8, 0, true);                 // compressão STORE
+      lv.setUint16(10, 0, true);                // hora modificação
+      lv.setUint16(12, 0, true);                // data modificação
+      lv.setUint32(14, fileCrc, true);           // crc32
+      lv.setUint32(18, size, true);              // tamanho comprimido
+      lv.setUint32(22, size, true);              // tamanho descomprimido
+      lv.setUint16(26, nameBytes.length, true);  // tamanho do nome
+      lv.setUint16(28, 0, true);                 // extra field
+      new Uint8Array(local).set(nameBytes, 30);
+
+      parts.push(new Uint8Array(local));
+      parts.push(fileData);
+
+      // Central directory header (46 bytes + nome)
+      var central = new ArrayBuffer(46 + nameBytes.length);
+      var cv = new DataView(central);
+      cv.setUint32(0, 0x02014b50, true);        // assinatura
+      cv.setUint16(4, 20, true);                // versão que criou
+      cv.setUint16(6, 20, true);                // versão necessária
+      cv.setUint16(8, 0, true);                 // flags
+      cv.setUint16(10, 0, true);                // compressão STORE
+      cv.setUint16(12, 0, true);                // hora modificação
+      cv.setUint16(14, 0, true);                // data modificação
+      cv.setUint32(16, fileCrc, true);           // crc32
+      cv.setUint32(20, size, true);              // tamanho comprimido
+      cv.setUint32(24, size, true);              // tamanho descomprimido
+      cv.setUint16(28, nameBytes.length, true);  // tamanho do nome
+      cv.setUint16(30, 0, true);                 // extra field
+      cv.setUint16(32, 0, true);                 // comentário
+      cv.setUint16(34, 0, true);                 // disco
+      cv.setUint16(36, 0, true);                 // atributos internos
+      cv.setUint32(38, 0, true);                 // atributos externos
+      cv.setUint32(42, offset, true);            // offset do header local
+      new Uint8Array(central).set(nameBytes, 46);
+
+      centralParts.push(new Uint8Array(central));
+      offset += 30 + nameBytes.length + size;
+    }
+
+    // Adicionar central directory ao final
+    var centralOffset = offset;
+    var centralSize = 0;
+    for (var c = 0; c < centralParts.length; c++) {
+      parts.push(centralParts[c]);
+      centralSize += centralParts[c].length;
+    }
+
+    // End of central directory (22 bytes)
+    var endBuf = new ArrayBuffer(22);
+    var ev = new DataView(endBuf);
+    ev.setUint32(0, 0x06054b50, true);          // assinatura
+    ev.setUint16(4, 0, true);                   // disco
+    ev.setUint16(6, 0, true);                   // disco do central dir
+    ev.setUint16(8, files.length, true);         // entradas neste disco
+    ev.setUint16(10, files.length, true);        // total de entradas
+    ev.setUint32(12, centralSize, true);         // tamanho do central dir
+    ev.setUint32(16, centralOffset, true);       // offset do central dir
+    ev.setUint16(20, 0, true);                   // comentário
+    parts.push(new Uint8Array(endBuf));
+
+    return new Blob(parts, { type: 'application/zip' });
+  }
+
+  function saveZipBlob(blob, filename, successMsg) {
+    console.log('[pinboard] saveZipBlob: blob size =', blob.size, 'filename =', filename);
+    // Método 1: GM_download com blob URL
+    try {
+      var blobUrl = URL.createObjectURL(blob);
+      console.log('[pinboard] Tentando GM_download com blob URL:', blobUrl);
+      GM_download({
+        url: blobUrl,
+        name: filename,
+        saveAs: false,
+        onload: function () {
+          console.log('[pinboard] GM_download blob URL: sucesso');
+          showToast(successMsg);
+          setTimeout(function () { URL.revokeObjectURL(blobUrl); }, 5000);
+        },
+        onerror: function (err) {
+          console.warn('[pinboard] GM_download blob URL falhou:', JSON.stringify(err));
+          URL.revokeObjectURL(blobUrl);
+          saveZipFallback2(blob, filename, successMsg);
+        }
+      });
+    } catch (e) {
+      console.warn('[pinboard] GM_download lançou exceção:', e);
+      saveZipFallback2(blob, filename, successMsg);
+    }
+  }
+
+  function saveZipFallback2(blob, filename, successMsg) {
+    // Método 2: anchor click via unsafeWindow para escapar do sandbox
+    console.log('[pinboard] Tentando fallback anchor via contexto da página');
+    try {
+      var realWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      var blobUrl = realWindow.URL.createObjectURL(blob);
+      var a = realWindow.document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = filename;
+      realWindow.document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        realWindow.URL.revokeObjectURL(blobUrl);
+      }, 10000);
+      showToast(successMsg);
+      console.log('[pinboard] Fallback anchor: clique disparado');
+    } catch (e) {
+      console.warn('[pinboard] Fallback anchor falhou:', e);
+      saveZipFallback3(blob, filename, successMsg);
+    }
+  }
+
+  function saveZipFallback3(blob, filename, successMsg) {
+    // Método 3: converter para data URL e abrir em nova aba
+    console.log('[pinboard] Tentando fallback data URL');
+    var reader = new FileReader();
+    reader.onloadend = function () {
+      try {
+        var w = window.open(reader.result, '_blank');
+        if (w) {
+          showToast(successMsg + " (abriu em nova aba)");
+        } else {
+          showToast("Erro: popup bloqueado. Permita popups para x.com");
+        }
+      } catch (e) {
+        console.error('[pinboard] Todos os métodos de download falharam:', e);
+        showToast("Erro: não foi possível salvar o ZIP");
+      }
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function downloadImagesAsZip(urls, filenames, zipFilename) {
+    console.log('[pinboard] downloadImagesAsZip: iniciando', urls.length, 'arquivos');
+    showToast("Preparando ZIP...");
+    var zipFiles = [];
+    var count = 0;
+    var total = urls.length;
+    var hasErrors = false;
+
+    urls.forEach(function (url, idx) {
+      var name = filenames[idx];
+      console.log('[pinboard] Baixando para ZIP:', name, url);
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: url,
+        responseType: "arraybuffer",
+        onload: function (response) {
+          console.log('[pinboard] Download concluído:', name, 'status:', response.status, 'bytes:', response.response ? response.response.byteLength : 0);
+          if (response.status === 200 && response.response) {
+            zipFiles.push({ name: name, data: new Uint8Array(response.response) });
+          } else {
+            console.error("[pinboard] Falha ao baixar para o ZIP:", url, response.status);
+            hasErrors = true;
+          }
+          count++;
+          if (count === total) {
+            buildAndSaveZip();
+          }
+        },
+        onerror: function (err) {
+          console.error("[pinboard] Erro ao baixar para o ZIP:", url, err);
+          hasErrors = true;
+          count++;
+          if (count === total) {
+            buildAndSaveZip();
+          }
+        }
+      });
+    });
+
+    function buildAndSaveZip() {
+      console.log('[pinboard] buildAndSaveZip: arquivos coletados =', zipFiles.length);
+      if (zipFiles.length === 0) {
+        showToast("Erro: nenhum arquivo foi baixado para o ZIP");
+        return;
+      }
+      showToast("Gerando arquivo ZIP...");
+      try {
+        var blob = createZipBlob(zipFiles);
+        console.log('[pinboard] ZIP criado: size =', blob.size);
+        var msg = hasErrors ? "ZIP concluído com avisos (veja o console)" : "Download do ZIP concluído!";
+        saveZipBlob(blob, zipFilename, msg);
+      } catch (e) {
+        console.error('[pinboard] Erro ao criar ZIP:', e);
+        showToast("Erro ao gerar ZIP: " + e.message);
+      }
+    }
+  }
   function loadImageFromBlob(_x6) {
     return _loadImageFromBlob.apply(this, arguments);
   }
@@ -1690,18 +2146,31 @@ var STORAGE_KEY = 'x_internal_bookmarks';
     }
     var handle = extractHandle(bookmark.postUrl) || 'unknown';
     var postId = ((_bookmark$postUrl$mat2 = bookmark.postUrl.match(/status\/(\d+)/)) === null || _bookmark$postUrl$mat2 === void 0 ? void 0 : _bookmark$postUrl$mat2[1]) || bookmark.id;
+    
+    var urls = [];
+    var filenames = [];
     bookmark.images.forEach(function (img, idx) {
       var _getImageUrl = getImageUrl(bookmark, idx),
         url = _getImageUrl.url;
       var ext = url.includes('.mp4') ? 'mp4' : url.includes('.png') ? 'png' : 'jpg';
       var filename = "".concat(handle, "_").concat(postId, "_").concat(idx + 1, ".").concat(ext);
-
-      // Delay para evitar sobrecarga
-      setTimeout(function () {
-        return downloadImage(url, filename);
-      }, idx * 300);
+      urls.push(url);
+      filenames.push(filename);
     });
-    showToast("Baixando ".concat(bookmark.images.length, " imagem(ns)..."));
+
+    var settings = getSettings();
+    if (settings.downloadAsZip && urls.length > 1) {
+      var zipFilename = "@".concat(handle, "_").concat(postId, ".zip");
+      downloadImagesAsZip(urls, filenames, zipFilename);
+    } else {
+      urls.forEach(function (url, idx) {
+        var filename = filenames[idx];
+        setTimeout(function () {
+          return downloadImage(url, filename);
+        }, idx * 300);
+      });
+      showToast("Baixando ".concat(urls.length, " imagem(ns)..."));
+    }
     selectedItems.clear();
   }
   function downloadSelectedItems() {
@@ -1710,39 +2179,51 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       return;
     }
     var bookmarks = getBookmarks();
-    var totalFiles = 0;
-    var delayOffset = 0;
+    var urls = [];
+    var filenames = [];
+    
     selectedItems.forEach(function (id) {
       var bookmark = bookmarks.find(function (b) {
         return b.id === id;
       });
       if (bookmark && bookmark.images) {
         var _bookmark$postUrl$mat3;
-        if (bookmark.mergedImageUrl) {
-          var mergedFilename = getMergedImageFilename(bookmark);
-          setTimeout(function () {
-            return downloadImage(bookmark.mergedImageUrl, mergedFilename);
-          }, delayOffset * 300);
-          delayOffset++;
-          totalFiles++;
-          return;
-        }
         var handle = extractHandle(bookmark.postUrl) || 'unknown';
         var postId = ((_bookmark$postUrl$mat3 = bookmark.postUrl.match(/status\/(\d+)/)) === null || _bookmark$postUrl$mat3 === void 0 ? void 0 : _bookmark$postUrl$mat3[1]) || bookmark.id;
+        
+        if (bookmark.mergedImageUrl) {
+          var mergedFilename = getMergedImageFilename(bookmark);
+          urls.push(bookmark.mergedImageUrl);
+          filenames.push(mergedFilename);
+          return;
+        }
+        
         bookmark.images.forEach(function (img, idx) {
           var _getImageUrl2 = getImageUrl(bookmark, idx),
             url = _getImageUrl2.url;
           var ext = url.includes('.mp4') ? 'mp4' : url.includes('.png') ? 'png' : 'jpg';
           var filename = "@".concat(handle, "_").concat(postId, "_").concat(idx + 1, ".").concat(ext);
-          setTimeout(function () {
-            return downloadImage(url, filename);
-          }, delayOffset * 300);
-          delayOffset++;
-          totalFiles++;
+          urls.push(url);
+          filenames.push(filename);
         });
       }
     });
-    showToast("Baixando ".concat(totalFiles, " arquivo(s) de ").concat(selectedItems.size, " bookmark(s)..."));
+
+    var settings = getSettings();
+    if (settings.downloadAsZip && urls.length > 1) {
+      downloadImagesAsZip(urls, filenames, "pinboard_bulk_download.zip");
+    } else if (urls.length > 0) {
+      var delayOffset = 0;
+      urls.forEach(function (url, idx) {
+        var filename = filenames[idx];
+        setTimeout(function () {
+          return downloadImage(url, filename);
+        }, delayOffset * 300);
+        delayOffset++;
+      });
+      showToast("Baixando ".concat(urls.length, " arquivo(s) de ").concat(selectedItems.size, " bookmark(s)..."));
+    }
+    
     selectedItems.clear();
     updateGalleryContent();
     updateBulkUI();
@@ -2919,7 +3400,15 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       return row;
     }
 
-    // === SEÇÃO 2: ATALHOS ===
+    // === SEÇÃO 2: DOWNLOADS ===
+    settingsContainer.appendChild(createCollapsibleSection('downloads', ICON_DOWNLOAD, 'Downloads', function (content) {
+      content.style.display = 'flex';
+      content.style.flexDirection = 'column';
+      content.style.gap = '12px';
+      content.appendChild(createToggleRow('Baixar mídias como ZIP', 'Agrupa todas as mídias selecionadas/baixadas em um arquivo ZIP em vez de baixá-las individualmente', 'downloadAsZip'));
+    }));
+
+    // === SEÇÃO 3: ATALHOS ===
     settingsContainer.appendChild(createCollapsibleSection('shortcuts', ICON_SETTINGS, 'Atalhos de Teclado', function (content) {
       var shortcuts = settings.shortcuts || DEFAULT_SETTINGS.shortcuts;
       var shortcutLabels = {
@@ -4186,7 +4675,7 @@ var STORAGE_KEY = 'x_internal_bookmarks';
       downloadBtn.removeAttribute('data-pinboard-injected');
       downloadBtn.setAttribute('data-pinboard-download-injected', 'true');
       downloadBtn.setAttribute('aria-label', 'Download Direto');
-      downloadBtn.title = 'Baixar Mídias Direto (Sem Salvar)';
+      downloadBtn.title = 'Download';
       downloadBtn.style.marginRight = IN_POST_ACTION_BUTTON_GAP;
       applyInPostActionButtonSize(downloadBtn);
       button.style.marginLeft = '0';
@@ -4305,14 +4794,38 @@ var STORAGE_KEY = 'x_internal_bookmarks';
               case 6:
                 handle = extractHandle(postUrl) || 'unknown';
                 postId = ((_postUrl$match = postUrl.match(/status\/(\d+)/)) === null || _postUrl$match === void 0 ? void 0 : _postUrl$match[1]) || Date.now();
-                images.forEach(function (url, idx) {
-                  var ext = url.includes('.mp4') ? 'mp4' : url.includes('.png') ? 'png' : 'jpg';
-                  var filename = "".concat(handle, "_").concat(postId, "_").concat(idx + 1, ".").concat(ext);
-                  setTimeout(function () {
-                    return downloadImage(url, filename);
-                  }, idx * 300);
-                });
-                showToast("Baixando ".concat(images.length, " m\xEDdia(s)..."));
+                if (images.length > 1) {
+                  showImageSelectModal(images, handle, postId, function (selectedUrls) {
+                    var settings = getSettings();
+                    var filenames = selectedUrls.map(function (url, idx) {
+                      var originalIdx = images.indexOf(url);
+                      var ext = url.includes('.mp4') ? 'mp4' : url.includes('.png') ? 'png' : 'jpg';
+                      return "".concat(handle, "_").concat(postId, "_").concat(originalIdx + 1, ".").concat(ext);
+                    });
+                    
+                    if (settings.downloadAsZip && selectedUrls.length > 1) {
+                      var zipFilename = "@".concat(handle, "_").concat(postId, ".zip");
+                      downloadImagesAsZip(selectedUrls, filenames, zipFilename);
+                    } else {
+                      selectedUrls.forEach(function (url, idx) {
+                        var originalIdx = images.indexOf(url);
+                        var ext = url.includes('.mp4') ? 'mp4' : url.includes('.png') ? 'png' : 'jpg';
+                        var filename = "".concat(handle, "_").concat(postId, "_").concat(originalIdx + 1, ".").concat(ext);
+                        setTimeout(function () {
+                          return downloadImage(url, filename);
+                        }, idx * 300);
+                      });
+                      showToast("Baixando ".concat(selectedUrls.length, " m\xEDdia(s) selecionada(s)..."));
+                    }
+                  });
+                } else {
+                  images.forEach(function (url, idx) {
+                    var ext = url.includes('.mp4') ? 'mp4' : url.includes('.png') ? 'png' : 'jpg';
+                    var filename = "".concat(handle, "_").concat(postId, "_").concat(idx + 1, ".").concat(ext);
+                    downloadImage(url, filename);
+                  });
+                  showToast("Baixando 1 m\xEDdia...");
+                }
               case 7:
                 return _context2.a(2);
             }
@@ -4576,6 +5089,114 @@ var STORAGE_KEY = 'x_internal_bookmarks';
         };
       }());
     });
+    
+    // Injetar botões overlays nas imagens do feed
+    injectImageOverlays();
+  }
+
+  function injectImageOverlays() {
+    try {
+      var photoContainers = document.querySelectorAll('div[data-testid="tweetPhoto"]:not([data-pinboard-overlay-injected])');
+      photoContainers.forEach(function (container) {
+        try {
+          container.setAttribute('data-pinboard-overlay-injected', 'true');
+
+          var badge = document.createElement('div');
+          badge.innerHTML = ICON_FULLSCREEN;
+          badge.title = 'Visualizar';
+          badge.style.cssText = [
+            'position: absolute',
+            'top: 8px',
+            'right: 8px',
+            'background: rgba(15, 18, 22, 0.75)',
+            'border: 1px solid rgba(255, 255, 255, 0.15)',
+            'border-radius: 9999px',
+            'width: 28px',
+            'height: 28px',
+            'display: flex',
+            'align-items: center',
+            'justify-content: center',
+            'cursor: pointer',
+            'color: white',
+            'z-index: 99',
+            'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5)',
+            'transition: background-color 0.2s, transform 0.15s'
+          ].join(';');
+
+          badge.onmouseenter = function () {
+            badge.style.background = 'rgba(29, 155, 240, 0.9)';
+            badge.style.transform = 'scale(1.08)';
+          };
+
+          badge.onmouseleave = function () {
+            badge.style.background = 'rgba(15, 18, 22, 0.75)';
+            badge.style.transform = 'scale(1)';
+          };
+
+          badge.onclick = function (e) {
+            try {
+              e.preventDefault();
+              e.stopPropagation();
+
+              var targetImg = container.querySelector('img');
+              if (!targetImg) return;
+              var targetSrc = targetImg.src;
+
+              var article = container.closest('article');
+              if (!article) return;
+
+              var allImgElements = getActionMediaElements(article);
+              var images = Array.from(allImgElements).map(function (el) {
+                var src = el.tagName.toLowerCase() === 'video' ? el.poster : el.src;
+                if (!src) return '';
+                if (el.tagName.toLowerCase() === 'img') {
+                  if (src.includes('name=')) {
+                    return src.replace(/name=[^&]+/, 'name=4096x4096');
+                  } else if (src.includes('?')) {
+                    return src + '&name=4096x4096';
+                  }
+                }
+                return src;
+              }).filter(Boolean);
+
+              var viewableImages = images.filter(function (url) {
+                var u = (url || '').toLowerCase();
+                return !u.includes('.mp4') && !u.includes('video.twimg.com');
+              });
+
+              if (viewableImages.length === 0) {
+                showToast('Nenhuma imagem encontrada para visualizar.');
+                return;
+              }
+
+              var cleanTargetSrc = targetSrc.split('?')[0].split('&')[0];
+              var startIndex = 0;
+              for (var idx = 0; idx < viewableImages.length; idx++) {
+                var cleanSrc = viewableImages[idx].split('?')[0].split('&')[0];
+                if (cleanSrc === cleanTargetSrc) {
+                  startIndex = idx;
+                  break;
+                }
+              }
+
+              var mockBookmark = {
+                images: viewableImages,
+                telegramUrls: []
+              };
+              showImageViewer(mockBookmark, startIndex, viewableImages);
+            } catch (clickErr) {
+              console.error('[pinboard] Erro ao clicar no overlay de imagem:', clickErr);
+            }
+          };
+
+          container.appendChild(badge);
+        } catch (itemErr) {
+          console.error('[pinboard] Erro ao criar overlay em container:', itemErr);
+        }
+      });
+    } catch (err) {
+      console.error('[pinboard] Erro na injeção de overlays:', err);
+    }
   }
   function debounce(func, delay) {
     var timeout;
